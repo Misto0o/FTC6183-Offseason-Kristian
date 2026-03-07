@@ -45,4 +45,4 @@ This offseason development is primarily being worked on by:
 - **Kristian**
 - **Luke (helping with offseason and guiding me how to go about things)**
 
-We are both using this time to **refactor, test, and improve the robot code** before the next season.
+We are both using this time to **refactor, test, and improve the robot code** before the next season
