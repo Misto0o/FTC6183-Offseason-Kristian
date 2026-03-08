@@ -25,4 +25,10 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+
+    // FTC SDK modules
+    implementation 'org.firstinspires.ftc:RobotCore:11.1.0'
+    implementation 'org.firstinspires.ftc:Hardware:11.1.0'
+    implementation 'org.firstinspires.ftc:Vision:11.1.0'
+    implementation 'com.acmerobotics:dashboard:1.21.1'
 }

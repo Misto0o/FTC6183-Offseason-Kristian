@@ -1,131 +1,205 @@
-## TeamCode Module
+# FTC 6183 Loki — Robot Recode 🤖🔥
 
-Welcome!
+This repository contains the fully refactored robot software for FTC Team 6183 Loki.
+Over the course of this offseason, the entire codebase was rebuilt from the ground up — removing a third-party command framework, fixing bugs, and rewriting every subsystem in clean, plain FTC SDK code.
 
-This module, TeamCode, is the place where you will write/paste the code for your team's
-robot controller App. This module is currently empty (a clean slate) but the
-process for adding OpModes is straightforward.
+---
 
-## Creating your own OpModes
+## Why We Rewrote Everything
 
-The easiest way to create your own OpMode is to copy a Sample OpMode and make it your own.
+Our previous lead programmer (Cheick) built the original codebase on top of **NextFTC**, a third-party command-based framework. While the logic underneath was solid, the framework was causing real problems:
 
-Sample opmodes exist in the FtcRobotController module.
-To locate these samples, find the FtcRobotController module in the "Project/Android" tab.
+- Subsystem methods returned `Command` objects that **silently did nothing** if you forgot to call `.run()` or `.schedule()` on them — motors never moved and there was no error
+- `Robot.java` used blocking `sleep()` calls inside command sequences that froze the entire loop
+- The code was extremely difficult for new programmers to read or debug
+- Removing the framework required touching every single file
 
-Expand the following tree elements:
- FtcRobotController/java/org.firstinspires.ftc.robotcontroller/external/samples
+The decision was made to strip NextFTC out entirely and rewrite everything in **plain iterative OpMode** style — the standard FTC SDK that every FTC programmer already knows.
 
-### Naming of Samples
+---
 
-To gain a better understanding of how the samples are organized, and how to interpret the
-naming system, it will help to understand the conventions that were used during their creation.
+## What Changed
 
-These conventions are described (in detail) in the sample_conventions.md file in this folder.
+### Framework Removal
+- Removed all `NextFTCOpMode`, `SubsystemGroup`, `Command`, `SequentialGroupFixed`, `Delay`, `InstantCommand`, `WaitUntil`, `RunToVelocity`, `RunToPosition`, `SetPosition`, `SetPower`, and all other NextFTC classes
+- Removed `Robot.java` entirely — Teleop now talks directly to subsystems
+- All subsystem methods changed from returning `Command` objects to plain `void`
+- All delays replaced with `ElapsedTime`-based state machines
+- All button handling uses `prevButton` boolean edge detection pattern
 
-To summarize: A range of different samples classes will reside in the java/external/samples.
-The class names will follow a naming convention which indicates the purpose of each class.
-The prefix of the name will be one of the following:
+### Subsystems Rewritten (`org.firstinspires.ftc.teamcode.robot`)
 
-Basic:  	This is a minimally functional OpMode used to illustrate the skeleton/structure
-            of a particular style of OpMode.  These are bare bones examples.
+#### `Drivetrain.java`
+- Plain mecanum drive, `getInstance()` singleton
+- `drive(y, x, rx)` — raw mecanum math, same as original
+- Brake mode on all motors, fl/fr reversed to match hardware
+- Removed unused IMU (field-centric not used in teleop)
 
-Sensor:    	This is a Sample OpMode that shows how to use a specific sensor.
-            It is not intended to drive a functioning robot, it is simply showing the minimal code
-            required to read and display the sensor values.
+#### `Intake.java`
+- `on()`, `idle()`, `reverse()` — plain void methods
+- Fixed the core bug: Cheick's version returned a `SetPower` Command that was never executed, so the motor never actually moved
 
-Robot:	    This is a Sample OpMode that assumes a simple two-motor (differential) drive base.
-            It may be used to provide a common baseline driving OpMode, or
-            to demonstrate how a particular sensor or concept can be used to navigate.
+#### `Pinpoint.java`
+- GoBilda Pinpoint odometry computer
+- Offsets: 4.5" strafe, -7.125" forward
+- goBILDA 4-bar pod, FORWARD/REVERSED encoder directions
+- Added `pinpoint.resetPosAndIMU()` on init to clear stale position between runs
 
-Concept:	This is a sample OpMode that illustrates performing a specific function or concept.
-            These may be complex, but their operation should be explained clearly in the comments,
-            or the comments should reference an external doc, guide or tutorial.
-            Each OpMode should try to only demonstrate a single concept so they are easy to
-            locate based on their name.  These OpModes may not produce a drivable robot.
+#### `Transfer.java`
+- Two servos (`leftFork`, `rightFork`) for ball transfer mechanism
+- `transferUp()` / `transferDown()` — plain void
+- Servo positions: leftUp=1, leftDown=0, rightUp=0, rightDown=1
 
-After the prefix, other conventions will apply:
+#### `Spindexer.java`
+- Three-position ball indexer with two NormalizedColorSensors
+- Hardware: `spinServo`, `leftColor`, `rightColor`
+- Servo positions: intake={0.05, 0.42, 0.79}, shoot={0.25, 0.62, 1.0}
+- Color detection via HSV thresholds, tunable on FTC Dashboard
+- **Bug fixed:** Cheick's `setColor()` always wrote to `currentPosition` instead of the passed-in position, causing wrong slots to be marked empty during shoot sequences
+- **Bug fixed:** `checkSpindexerState()` now properly resets `empty`/`full` flags at the start of each check instead of letting them get stuck
 
-* Sensor class names are constructed as:    Sensor - Company - Type
-* Robot class names are constructed as:     Robot - Mode - Action - OpModetype
-* Concept class names are constructed as:   Concept - Topic - OpModetype
+#### `Turret.java`
+- Flywheel shooter (2x DcMotorEx), turret rotation (DcMotor), hood servo, analog encoder
+- **Bang-bang velocity control with deadband** — holds current power within `threshold` to prevent oscillation. Cheick's original flip-flopped every tick
+- **Turret PD control** — `turretKp=0.01`, `turretKd=0.001`, `maxPower=0.45`
+- **Bug fixed:** `distanceToVelocity()` had a `y>60||y<40` dead zone condition that returned 0 for any robot position with y between 40-60 (mid-field). Removed entirely
+- **Bug fixed:** `isAtVelocity()` now returns `false` when target velocity is 0, preventing false "ready" signals
+- **Improvement:** Shooter motors set to `FLOAT` zero power behavior so flywheels spin down naturally instead of braking
+- Turret physical limits clamped to 180°–360° (center=270°, ±90° travel)
+- Full bilinear interpolator tables for blue/red shooter velocity and hood position (26 points each)
+- `followGoalOdometryPositional(Aliance)` replaces the old NextFTC Command version — call every loop tick
 
-Once you are familiar with the range of samples available, you can choose one to be the
-basis for your own robot.  In all cases, the desired sample(s) needs to be copied into
-your TeamCode module to be used.
+#### `Limelight.java` (`org.firstinspires.ftc.teamcode.Vision`)
+- Wrapped in try-catch so robot doesn't crash if Limelight is unplugged
+- Null guards on all methods
+- `distanceFromTag()` uses plain `Math.sqrt()` — removed Pedro Vector import
+- Removed dead `relocalizeFromCamera()` method
+- Tag IDs: BLUE_GOAL=20, RED_GOAL=24, GPP=21, PGP=22, PPG=23
 
-This is done inside Android Studio directly, using the following steps:
+---
 
- 1) Locate the desired sample class in the Project/Android tree.
+### Teleop (`org.firstinspires.ftc.teamcode.teleop.Teleop`)
 
- 2) Right click on the sample class and select "Copy"
+Full driver-controlled period. Alliance selected during `init_loop()`.
 
- 3) Expand the  TeamCode/java folder
+| Button | Action |
+|---|---|
+| Circle | Toggle intake on/off |
+| Cross | Manual transfer flick |
+| Triangle | Toggle intake/shoot mode |
+| Square ×1 | Spin up flywheel |
+| Square ×2 | Shoot (after ready rumble only) |
+| Square (during spin) | Emergency kill flywheel |
+| Left Bumper | Spindexer next position |
+| Right Bumper | Spindexer previous position |
+| DPad Up | Toggle turret lock (parks at 270°) |
+| DPad Down | Zero turret angle offset |
+| DPad Left | Reverse intake |
+| Right Trigger | Nudge aim right (-0.1°) |
+| Left Trigger | Nudge aim left (+0.1°) |
 
- 4) Right click on the org.firstinspires.ftc.teamcode folder and select "Paste"
+Key behaviors:
+- Flywheel 3-state machine: off → spinning up → ready (rumbleBlips when at speed)
+- Turret parks at 270° in intake mode, auto-aims via odometry in shoot mode
+- Velocity and hood position dynamically pulled from interpolator table based on robot position
+- Transfer flick is a non-blocking state machine using `ElapsedTime`
+- Ball detection triggers gamepad rumble (left=green, right=purple)
 
- 5) You will be prompted for a class name for the copy.
-    Choose something meaningful based on the purpose of this class.
-    Start with a capital letter, and remember that there may be more similar classes later.
+---
 
-Once your copy has been created, you should prepare it for use on your robot.
-This is done by adjusting the OpMode's name, and enabling it to be displayed on the
-Driver Station's OpMode list.
+### Tuning OpModes (`org.firstinspires.ftc.teamcode.tuning`)
 
-Each OpMode sample class begins with several lines of code like the ones shown below:
+All tuning OpModes stripped of NextFTC and fixed:
+
+- **`DataCollection.java`** — Full robot test with odometry, turret auto-aim, spindexer, and color detection. Fixed `Intake.on().run()` → `Intake.on()`
+- **`FullTest.java`** — Complete mechanism test with Limelight. Replaced `Turret.on()`/`Turret.off()` with `setVelocity()`
+- **`TestTurret.java`** — Isolated turret and encoder tuning
+- **`TestShooter.java`** — Flywheel velocity tuning
+- **`TestSpindexer.java`** — Spindexer position and color sensor tuning
+- **`TestLimelight.java`** — AprilTag detection and distance testing
+- **`TestHood.java`** — Hood servo position tuning
+
+---
+
+### Autonomous (`org.firstinspires.ftc.teamcode.Auto.SoloAuto`)
+
+Cheick's autos used `NextFTCOpMode` + `SequentialGroupFixed` + `Delay` command chains. These have been rewritten as `LinearOpMode` with Pedro Pathing.
+
+- **`BlueCloseSixBallAuto.java`** ✅ — Rewritten. Drives to shoot position, shoots 3, intakes row 1, shoots 3, intakes row 2, shoots 3.
+- `BlueCloseNineBallAuto`, `RedCloseSixBallAuto`, `BlueCloseTwelveBallAuto` — pending (same structure, different paths)
+
+Key changes in auto:
+- `NextFTCOpMode` → `LinearOpMode`
+- `FollowPath` Command → `follower.followPath()` with busy-wait loop
+- `Delay` → `ElapsedTime` timer in `tickPeriodicFor()`
+- `waitToShoot()` Command → `waitForVelocity()` polling `isAtVelocity()` with 3s timeout
+- All subsystems ticked every loop via `updatePeriodicSystems()`
+- Flywheel stays warm at 500 ticks/sec during intake driving
+
+---
+
+### Pedro Pathing (`org.firstinspires.ftc.teamcode.Pedro`)
+
+**No changes made.** Pedro Pathing is used for autonomous path following only and was already clean. Constants tuned for this robot:
+
+- Mass: 35kg
+- Forward zero power acceleration: -43.18
+- Lateral zero power acceleration: -64
+- Translational PIDF: (0.175, 0, 0.01, 0.03)
+- Heading PIDF: (1, 0, 0.02, 0.03)
+- Drive PIDF: (0.0025, 0, 0.00001, 0.6, 0.01)
+
+---
+
+### Utilities (`org.firstinspires.ftc.teamcode.Utils`)
+
+- **`Aliance.java`** — Simple enum: `BLUE`, `RED`
+- **`Interpolator.java`** — 2D bilinear interpolation with nearest-neighbor fallback. Used for shooter velocity and hood position lookup tables
+- **`SensorColor.java`** — HSV calibration OpMode for color sensor tuning, not used in match code
+
+---
+
+## Pending / Before First Match
+
+- [ ] Rewire robot and zero turret encoder
+- [ ] Verify hardware config names: `leftColor`, `rightColor`, `spinServo`, `hood`, `turretEncoder`, `shoot1`, `shoot2`, `turret`
+- [ ] Tune `threshold` (deadband width), `turretKp`, `turretKd` on FTC Dashboard
+- [ ] Confirm turret physical stop angles match 180°–360° clamp
+- [ ] Verify starting position coordinates match actual field setup
+- [ ] Finish rewriting remaining autonomous OpModes
+- [ ] Tune interpolator tables from new robot position data
+
+---
+
+## Future Goals
+
+- **Shooting on the move** (Luke's request) — turret already auto-aims every tick, the remaining work is lead-target angle correction and velocity compensation based on robot velocity from Pinpoint
+- Full 12-ball autonomous
+- Red alliance autonomous
+
+---
+
+## Project Structure
 
 ```
- @TeleOp(name="Template: Linear OpMode", group="Linear Opmode")
- @Disabled
+TeamCode/src/main/java/org/firstinspires/ftc/teamcode/
+├── robot/              # All subsystems (Drivetrain, Intake, Turret, Spindexer, Transfer, Pinpoint)
+├── teleop/             # Teleop.java
+├── tuning/             # All tuning and test OpModes
+├── Auto/
+│   └── SoloAuto/       # Autonomous OpModes
+├── Pedro/              # Pedro Pathing constants and tuning
+├── Vision/             # Limelight.java
+├── Utils/              # Aliance, Interpolator, SensorColor
+└── Configurations/     # ConfigureColorRangefinder
 ```
 
-The name that will appear on the driver station's "opmode list" is defined by the code:
- ``name="Template: Linear OpMode"``
-You can change what appears between the quotes to better describe your opmode.
-The "group=" portion of the code can be used to help organize your list of OpModes.
+---
 
-As shown, the current OpMode will NOT appear on the driver station's OpMode list because of the
-  ``@Disabled`` annotation which has been included.
-This line can simply be deleted , or commented out, to make the OpMode visible.
+## Offseason Development
 
+This refactor was worked on by:
+- **Kristian** — lead programmer, full codebase refactor
+- **Luke**  — direction, hardware decisions, feature requests
 
-
-## ADVANCED Multi-Team App management:  Cloning the TeamCode Module
-
-In some situations, you have multiple teams in your club and you want them to all share
-a common code organization, with each being able to *see* the others code but each having
-their own team module with their own code that they maintain themselves.
-
-In this situation, you might wish to clone the TeamCode module, once for each of these teams.
-Each of the clones would then appear along side each other in the Android Studio module list,
-together with the FtcRobotController module (and the original TeamCode module).
-
-Selective Team phones can then be programmed by selecting the desired Module from the pulldown list
-prior to clicking to the green Run arrow.
-
-Warning:  This is not for the inexperienced Software developer.
-You will need to be comfortable with File manipulations and managing Android Studio Modules.
-These changes are performed OUTSIDE of Android Studios, so close Android Studios before you do this.
- 
-Also.. Make a full project backup before you start this :)
-
-To clone TeamCode, do the following:
-
-Note: Some names start with "Team" and others start with "team".  This is intentional.
-
-1)  Using your operating system file management tools, copy the whole "TeamCode"
-    folder to a sibling folder with a corresponding new name, eg: "Team0417".
-
-2)  In the new Team0417 folder, delete the TeamCode.iml file.
-
-3)  the new Team0417 folder, rename the "src/main/java/org/firstinspires/ftc/teamcode" folder
-    to a matching name with a lowercase 'team' eg:  "team0417".
-
-4)  In the new Team0417/src/main folder, edit the "AndroidManifest.xml" file, change the line that contains
-         package="org.firstinspires.ftc.teamcode"
-    to be
-         package="org.firstinspires.ftc.team0417"
-
-5)  Add:    include ':Team0417' to the "/settings.gradle" file.
-    
-6)  Open up Android Studios and clean out any old files by using the menu to "Build/Clean Project""
+Built on top of Cheick's original logic and field data. The goal was never to throw away what he built — it was to make it work reliably and be understandable to anyone on the team going forward.
