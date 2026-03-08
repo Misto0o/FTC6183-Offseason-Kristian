@@ -8,7 +8,6 @@ Over the course of this offseason, the entire codebase was rebuilt from the grou
 ## Why We Rewrote Everything
 
 Our previous lead programmer (Cheick) built the original codebase on top of **NextFTC**, a third-party command-based framework. While the logic underneath was solid, the framework was causing real problems:
-
 - Subsystem methods returned `Command` objects that **silently did nothing** if you forgot to call `.run()` or `.schedule()` on them — motors never moved and there was no error
 - `Robot.java` used blocking `sleep()` calls inside command sequences that froze the entire loop
 - The code was extremely difficult for new programmers to read or debug
