@@ -50,7 +50,7 @@ public class FullTest extends OpMode {
         Limelight.INSTANCE.initialize(hardwareMap);
 
         type = "Intake";
-        Intake.INSTANCE.on();
+        //Intake.INSTANCE.on(); DONT MOVE due to lukes request
     }
 
     @Override

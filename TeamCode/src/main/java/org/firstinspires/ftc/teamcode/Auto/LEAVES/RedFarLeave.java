@@ -1,51 +1,41 @@
 package org.firstinspires.ftc.teamcode.Auto.LEAVES;
 
-import static dev.nextftc.extensions.pedro.PedroComponent.follower;
-import org.firstinspires.ftc.teamcode.Pedro.Constants;
-
+import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
-import dev.nextftc.core.commands.Command;
-import dev.nextftc.core.components.BindingsComponent;
-import dev.nextftc.extensions.pedro.FollowPath;
-import dev.nextftc.extensions.pedro.PedroComponent;
-import dev.nextftc.ftc.NextFTCOpMode;
-import dev.nextftc.ftc.components.BulkReadComponent;
+import org.firstinspires.ftc.teamcode.Pedro.Constants;
 
-@Autonomous
-public class RedFarLeave extends NextFTCOpMode {
-    public RedFarLeave(){
-        addComponents(
-                BulkReadComponent.INSTANCE,
-                BindingsComponent.INSTANCE,
-                new PedroComponent(Constants::createFollower)
-        );
-    }
-    private Path farLeave = new Path();
-    public void buildPath(){
-        farLeave = new Path(new BezierCurve(
-                new Pose(85.224,9),
-                new Pose(85.38775510204086, 60)));
+@Autonomous(name = "Red Far Leave", group = "Red")
+public class RedFarLeave extends LinearOpMode {
+
+    @Override
+    public void runOpMode() {
+        Follower follower = Constants.createFollower(hardwareMap);
+
+        Path farLeave = new Path(new BezierCurve(
+                new Pose(85.224, 9),
+                new Pose(85.388, 60)
+        ));
         farLeave.setConstantHeadingInterpolation(Math.toRadians(90));
-    }
-    public Command autoMoveForward(){
-        return new FollowPath(farLeave);
-    }
 
-    @Override
-    public void onStartButtonPressed(){
-        buildPath();
-        follower().setStartingPose(new Pose(85.38775510204086, 9, Math.toRadians(90)));
-        autoMoveForward().schedule();
-    }
-    @Override
-    public void onUpdate(){
-        telemetry.addData("X Position ", follower().getPose().getX());
-        telemetry.addData("Y Position ", follower().getPose().getY());
-        telemetry.addData("Get Pose", follower().getPose().getPose());
+        telemetry.addLine("Ready — Red Far Leave");
         telemetry.update();
+
+        waitForStart();
+        if (!opModeIsActive()) return;
+
+        follower.setStartingPose(new Pose(85.224, 9, Math.toRadians(90)));
+        follower.followPath(farLeave, true);
+
+        while (opModeIsActive() && follower.isBusy()) {
+            follower.update();
+            telemetry.addData("x", follower.getPose().getX());
+            telemetry.addData("y", follower.getPose().getY());
+            telemetry.update();
+        }
     }
 }

@@ -1,59 +1,74 @@
 package org.firstinspires.ftc.teamcode.Auto.SoloAuto;
 
+import com.acmerobotics.dashboard.config.Config;
+import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.Path;
-import com.pedropathing.paths.PathChain;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
-import static dev.nextftc.extensions.pedro.PedroComponent.follower;
-
-import org.firstinspires.ftc.teamcode.NextFTCPatch.SequentialGroupFixed;
 import org.firstinspires.ftc.teamcode.Pedro.Constants;
-import org.firstinspires.ftc.teamcode.Robot;
-import org.firstinspires.ftc.teamcode.Subsystems.Pinpoint;
-import org.firstinspires.ftc.teamcode.Subsystems.Drivetrain;
-import org.firstinspires.ftc.teamcode.Subsystems.Spindexer;
-import org.firstinspires.ftc.teamcode.Subsystems.Intake;
-import org.firstinspires.ftc.teamcode.Subsystems.Turret;
-import org.firstinspires.ftc.teamcode.Subsystems.Transfer;
-import org.firstinspires.ftc.teamcode.Utils.Aliance;
 
-import dev.nextftc.core.commands.Command;
-import dev.nextftc.core.commands.conditionals.IfElseCommand;
-import dev.nextftc.core.commands.delays.Delay;
-import dev.nextftc.core.commands.delays.WaitUntil;
-import dev.nextftc.core.commands.groups.SequentialGroup;
-import dev.nextftc.core.commands.utility.InstantCommand;
-import dev.nextftc.core.components.BindingsComponent;
-import dev.nextftc.core.components.SubsystemComponent;
-import dev.nextftc.extensions.pedro.FollowPath;
-import dev.nextftc.extensions.pedro.PedroComponent;
-import dev.nextftc.ftc.NextFTCOpMode;
-import dev.nextftc.ftc.components.BulkReadComponent;
-@Autonomous
-public class BlueCloseTwelveBallAutoP2 extends NextFTCOpMode{
+@Config
+@Autonomous(name = "Blue Close Twelve Ball Auto P2 (Path Test)", group = "Blue")
+public class BlueCloseTwelveBallAutoP2 extends LinearOpMode {
 
-    private Path scorePreload;
-    private Path pickUpFirstRow;
-    private Path returnOne;
-    private Path pickUpSecondRow;
-    private Path gateOne;
-    private Path gateTwo;
-    private Path returnTwo;
-    private Path pickUpThirdRow;
-    private Path end;
+    // ── Paths ─────────────────────────────────────────────────────────────────
+    // NOTE: This is a path-layout test auto — no subsystems, no shooting.
+    // Cheick's original had subsystems commented out of addComponents().
+    // Use this to verify P2 path geometry on the field before integrating
+    // into BlueCloseTwelveBallAuto.
+    private Path scorePreload, pickUpSecondRow;
+    private Path gateOne, gateTwo, returnTwo;
+    private Path path6, pickUpFirstRow, returnOne;
+    private Path pickUpThirdRow, end;
 
-    public BlueCloseTwelveBallAutoP2(){
-        addComponents(
-                //new SubsystemComponent(Spindexer.INSTANCE, Intake.INSTANCE, Turret.INSTANCE, Transfer.INSTANCE, Pinpoint.INSTANCE),
-                BulkReadComponent.INSTANCE,
-                BindingsComponent.INSTANCE,
-                new PedroComponent(Constants::createFollower)
-        );
+    private final Pose startPose = new Pose(24.980, 127.469, Math.toRadians(142));
+
+    @Override
+    public void runOpMode() {
+        Follower follower = Constants.createFollower(hardwareMap);
+
+        buildPaths();
+
+        telemetry.addLine("Ready — Blue Close Twelve Ball Auto P2 (Path Test)");
+        telemetry.addLine("No subsystems — path geometry test only");
+        telemetry.update();
+
+        waitForStart();
+        if (!opModeIsActive()) return;
+
+        follower.setStartingPose(startPose);
+
+        // ── Drive paths in sequence ───────────────────────────────────────────
+        followPath(follower, scorePreload);
+        followPath(follower, pickUpSecondRow);
+
+        // Remaining paths available to uncomment as each is verified:
+        // followPath(follower, gateOne);
+        // followPath(follower, gateTwo);
+        // followPath(follower, returnTwo);
+        // followPath(follower, path6);
+        // followPath(follower, pickUpFirstRow);
+        // followPath(follower, returnOne);
+        // followPath(follower, pickUpThirdRow);
+        // followPath(follower, end);
     }
-    public void buildPaths(){
+
+    private void followPath(Follower follower, Path path) {
+        follower.followPath(path, true);
+        while (opModeIsActive() && follower.isBusy()) {
+            follower.update();
+            telemetry.addData("x", follower.getPose().getX());
+            telemetry.addData("y", follower.getPose().getY());
+            telemetry.addData("heading", follower.getPose().getHeading());
+            telemetry.update();
+        }
+    }
+
+    private void buildPaths() {
         scorePreload = new Path(new BezierLine(
                 new Pose(24.980, 127.469),
                 new Pose(61.531, 84.857)
@@ -85,7 +100,7 @@ public class BlueCloseTwelveBallAutoP2 extends NextFTCOpMode{
         ));
         returnTwo.setConstantHeadingInterpolation(Math.toRadians(90));
 
-        Path path6 = new Path(new BezierLine(
+        path6 = new Path(new BezierLine(
                 new Pose(61.531, 72.449),
                 new Pose(61.449, 84.918)
         ));
@@ -115,26 +130,5 @@ public class BlueCloseTwelveBallAutoP2 extends NextFTCOpMode{
                 new Pose(61.490, 85.061)
         ));
         end.setTangentHeadingInterpolation();
-    }
-
-    public Command autonomousRoutine(){
-        return new SequentialGroupFixed(
-               new FollowPath(scorePreload),
-                new FollowPath(pickUpSecondRow)
-        );
-    }
-    @Override
-    public void onStartButtonPressed(){
-        buildPaths();
-        follower().setStartingPose(new Pose(24.980, 127.469, Math.toRadians(142)));
-        autonomousRoutine().schedule();
-    }
-
-    @Override
-    public void onUpdate() {
-        telemetry.addData("X Position ", follower().getPose().getX());
-        telemetry.addData("Y Position ", follower().getPose().getY());
-        telemetry.addData("Get Pose", follower().getPose().getPose());
-        telemetry.update();
     }
 }

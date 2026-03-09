@@ -18,6 +18,7 @@ import org.firstinspires.ftc.teamcode.robot.Transfer;
 import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 import org.firstinspires.ftc.teamcode.Vision.Limelight;
+import org.firstinspires.ftc.teamcode.Utils.MatchPattern;
 
 @Config
 @TeleOp(name = "Teleop", group = "!")
@@ -73,17 +74,18 @@ public class Teleop extends OpMode {
 
     @Override
     public void init_loop() {
-        if (gamepad1.dpad_up && !lastDpadUp) {
-            currentAliance = Aliance.BLUE;
-        }
-        if (gamepad1.dpad_down && !lastDpadDown) {
-            currentAliance = Aliance.RED;
-        }
+        if (gamepad1.dpad_up && !lastDpadUp)   currentAliance = Aliance.BLUE;
+        if (gamepad1.dpad_down && !lastDpadDown) currentAliance = Aliance.RED;
+
         lastDpadUp   = gamepad1.dpad_up;
         lastDpadDown = gamepad1.dpad_down;
 
+        MatchPattern.tryDetect();
+
         telemetry.addLine("DPad UP = Blue  |  DPad DOWN = Red");
         telemetry.addData("Alliance selected", currentAliance);
+        telemetry.addData("Pattern", MatchPattern.getPattern());
+        telemetry.addData("Pattern Locked", MatchPattern.isLocked());
         telemetry.update();
     }
 

@@ -1,192 +1,248 @@
 package org.firstinspires.ftc.teamcode.Auto.SoloAuto;
 
+import com.acmerobotics.dashboard.config.Config;
+import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-
-import static dev.nextftc.extensions.pedro.PedroComponent.follower;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
-import org.firstinspires.ftc.teamcode.NextFTCPatch.SequentialGroupFixed;
 import org.firstinspires.ftc.teamcode.Pedro.Constants;
-import org.firstinspires.ftc.teamcode.Robot;
-import org.firstinspires.ftc.teamcode.Subsystems.Pinpoint;
-import org.firstinspires.ftc.teamcode.Subsystems.Drivetrain;
-import org.firstinspires.ftc.teamcode.Subsystems.Spindexer;
-import org.firstinspires.ftc.teamcode.Subsystems.Intake;
-import org.firstinspires.ftc.teamcode.Subsystems.Turret;
-import org.firstinspires.ftc.teamcode.Subsystems.Transfer;
+import org.firstinspires.ftc.teamcode.robot.Intake;
+import org.firstinspires.ftc.teamcode.robot.Pinpoint;
+import org.firstinspires.ftc.teamcode.robot.Spindexer;
+import org.firstinspires.ftc.teamcode.robot.Transfer;
+import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
+import org.firstinspires.ftc.teamcode.Utils.MatchPattern;
+import org.firstinspires.ftc.teamcode.Vision.Limelight;
 
-import dev.nextftc.core.commands.Command;
-import dev.nextftc.core.commands.delays.Delay;
-import dev.nextftc.core.commands.utility.InstantCommand;
-import dev.nextftc.core.components.BindingsComponent;
-import dev.nextftc.core.components.SubsystemComponent;
-import dev.nextftc.extensions.pedro.FollowPath;
-import dev.nextftc.extensions.pedro.PedroComponent;
-import dev.nextftc.ftc.NextFTCOpMode;
-import dev.nextftc.ftc.components.BulkReadComponent;
-@Autonomous
-public class RedCloseSixBallAuto extends NextFTCOpMode{
-    public Path p1;
-    public Path p2;
-    public Path p3;
-    public Path p4;
-    public Path p5;
-    public Path leave;
+@Config
+@Autonomous(name = "Red Close Six Ball Auto", group = "Red")
+public class RedCloseSixBallAuto extends LinearOpMode {
 
-    public static double hoodPosition = 0;
-    public static double velocity = 0;
-    public static Pose endPose = new Pose();
-    public RedCloseSixBallAuto(){
-        addComponents(
-                new SubsystemComponent(Spindexer.INSTANCE, Intake.INSTANCE, Turret.INSTANCE, Transfer.INSTANCE, Pinpoint.INSTANCE),
-                BulkReadComponent.INSTANCE,
-                BindingsComponent.INSTANCE,
-                new PedroComponent(Constants::createFollower)
-        );
-    }
-    public Command setToPositionOne(){
-        return new InstantCommand(()->Spindexer.INSTANCE.setCurrentPosition(Spindexer.Position.POSITION_ONE));
-    }
+    // ── Tunable delays (ms) ───────────────────────────────────────────────────
+    public static long TRANSFER_FLICK_UP_MS   = 500;
+    public static long TRANSFER_FLICK_DOWN_MS = 400;
+    public static long SPINDEXER_SETTLE_MS    = 600;
+    public static long AT_VELOCITY_TIMEOUT_MS = 3000;
 
-    public Command setToPositionTwo(){
-        return new InstantCommand(()->Spindexer.INSTANCE.setCurrentPosition(Spindexer.Position.POSITION_TWO));
-    }
+    // ── Paths ─────────────────────────────────────────────────────────────────
+    private Follower follower;
+    private Path p1, p2, p3, p4;
 
-    public Command setToPositionThree(){
-        return new InstantCommand(()->Spindexer.INSTANCE.setCurrentPosition(Spindexer.Position.POSITION_THREE));
-    }
+    // ── Starting pose ─────────────────────────────────────────────────────────
+    private final Pose startPose = new Pose(116.816, 130.041, Math.toRadians(38));
 
-    public Command transferFlick(){
-        return new SequentialGroupFixed(
-                Transfer.INSTANCE.transferUp(),
-                new Delay(0.5),
-                Transfer.INSTANCE.transferDown());
-
-    }
-    public Command shootThree(){
-        return new SequentialGroupFixed(
-                Intake.INSTANCE.idle(),
-                new InstantCommand(() -> Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT)),
-                setToPositionOne(),
-                new Delay(0.7),
-                Turret.INSTANCE.waitToShoot(),
-                Transfer.INSTANCE.transferDown(),
-                new Delay(0.5),
-                Transfer.INSTANCE.transferUp(),
-                new Delay(0.5),
-                Transfer.INSTANCE.transferDown(),
-                new Delay(0.7),
-                new InstantCommand(()->Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY)),
-                setToPositionTwo(),
-                new Delay(0.7),
-                Turret.INSTANCE.waitToShoot(),
-                Transfer.INSTANCE.transferUp(),
-                new Delay(0.5),
-                Transfer.INSTANCE.transferDown(),
-                new Delay(0.7),
-                new InstantCommand(()->Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY)),
-                setToPositionThree(),
-                new Delay(0.7),
-                Turret.INSTANCE.waitToShoot(),
-                Transfer.INSTANCE.transferUp(),
-                new Delay(0.5),
-                Transfer.INSTANCE.transferDown(),
-                new InstantCommand(()->Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY))
-        );
-    }
-    public Command intakeMode(){
-        return new SequentialGroupFixed(
-                new InstantCommand(() -> Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE))
-        );
-    }
-
-
-    public void buildPaths(){
-        p1 = new Path(new BezierLine(
-                new Pose(116.81632653061224, 130.04081632653063),
-                new Pose(82.28532653061227, 94.22434693877551)
-        ));
-        p1.setLinearHeadingInterpolation(Math.toRadians(38), Math.toRadians(0));
-        p2 = new Path(new BezierCurve(
-                new Pose(82.28532653061227, 94.22434693877551),
-                new Pose(80.44897959183675, 54.73469387755101),
-                new Pose(107.79591836734696, 59.71432653061225)));
-        p2.setConstantHeadingInterpolation(Math.toRadians(0));
-
-        p3 = new Path(new BezierLine(
-                new Pose(107.79591836734696, 59.71432653061225),
-                new Pose(122.36734693877551, 59.755102040816325)
-        ));
-        p3.setConstantHeadingInterpolation(Math.toRadians(0));
-
-        p4 = new Path(new BezierLine(
-                new Pose(122.36734693877551, 59.755102040816325),
-                new Pose(82.16326530612247, 93.87755102040816)
-        ));
-        p4.setConstantHeadingInterpolation(Math.toRadians(0));
-    }
-
-    public Command autonomousRoutine(){
-        return new SequentialGroupFixed(
-                new FollowPath(p1),
-                shootThree(),
-                intakeMode(),
-                new FollowPath(p2),
-                new FollowPath(p3,true,0.75),
-                new FollowPath(p4),
-                shootThree(),
-                shootThree()
-        );
-    }
     @Override
-    public void onStartButtonPressed(){
+    public void runOpMode() {
+        // ── Init hardware ─────────────────────────────────────────────────────
+        follower = Constants.createFollower(hardwareMap);
+
+        Intake.INSTANCE.init(hardwareMap);
+        Spindexer.INSTANCE.initialize(
+                hardwareMap.servo.get("spinServo"),
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColor"),
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColor")
+        );
+        Transfer.INSTANCE.initialize(hardwareMap);
+        Turret.INSTANCE.initialize(hardwareMap);
+        Pinpoint.INSTANCE.init(hardwareMap);
+        Limelight.INSTANCE.initialize(hardwareMap);
+        MatchPattern.reset();
+
         buildPaths();
-        follower().setStartingPose(new Pose(116.81632653061224, 130.04081632653063, Math.toRadians(38)));
-//        Turret.INSTANCE.setToZero().schedule();
-        Pinpoint.INSTANCE.updatePosition(new Pose2D(DistanceUnit.INCH, 116.81632653061224, 130.04081632653063, AngleUnit.DEGREES, 38));
-        autonomousRoutine().schedule();
+
+        // ── Wait for start — detect pattern while waiting ─────────────────────
+        while (!isStarted() && !isStopRequested()) {
+            MatchPattern.tryDetect();
+            telemetry.addLine("Ready — Red Close Six Ball Auto");
+            telemetry.addData("Alliance", "RED");
+            telemetry.addData("Pattern", MatchPattern.getPattern());
+            telemetry.addData("Pattern Locked", MatchPattern.isLocked());
+            telemetry.update();
+        }
+        if (!opModeIsActive()) return;
+
+        // ── Set starting pose ─────────────────────────────────────────────────
+        follower.setStartingPose(startPose);
+        Pinpoint.INSTANCE.updatePosition(
+                new Pose2D(DistanceUnit.INCH, 116.816, 130.041, AngleUnit.DEGREES, 38)
+        );
+
+        // ── Spin up flywheel immediately ──────────────────────────────────────
+        Turret.INSTANCE.setVelocity(
+                Turret.INSTANCE.distanceToVelocity(startPose.getX(), startPose.getY(), Aliance.RED)
+        );
+        Turret.INSTANCE.setHoodPosition(
+                Turret.INSTANCE.distanceToPosition(startPose.getX(), startPose.getY(), Aliance.RED)
+        );
+
+        // ── Drive to shoot position ───────────────────────────────────────────
+        followPath(p1);
+
+        // ── Shoot first three ─────────────────────────────────────────────────
+        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+        shootThree();
+
+        // ── Intake mode → curve to row 1, sweep through, return ──────────────
+        intakeMode();
+        followPath(p2);
+        followPath(p3);
+        followPath(p4);
+
+        // ── Shoot second three ────────────────────────────────────────────────
+        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+        shootThree();
+
+        // NOTE: Cheick's original called shootThree() twice here (same as NineBall).
+        // Likely a mistake — second shootThree() commented out until row 2 path exists.
+        // shootThree();
+
+        // ── Done ──────────────────────────────────────────────────────────────
+        Turret.INSTANCE.setVelocity(0);
+        Intake.INSTANCE.idle();
     }
 
-    @Override
-    public void onUpdate() {
-        telemetry.addData("X Position ", follower().getPose().getX());
-        telemetry.addData("Y Position ", follower().getPose().getY());
-        telemetry.addData("Get Pose", follower().getPose());
-        Pinpoint.INSTANCE.periodic();
-        Turret.INSTANCE.status(telemetry);
-        Spindexer.INSTANCE.status(telemetry);
-        telemetry.update();
+    // ─────────────────────────────────────────────────────────────────────────
+    // Shoot sequence — waits for velocity, then flicks all 3 positions
+    // ─────────────────────────────────────────────────────────────────────────
+    private void shootThree() {
+        Intake.INSTANCE.idle();
 
-        if(Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE) {
-            Intake.INSTANCE.on().schedule();
-            if(Spindexer.INSTANCE.freePosition()!=-1){
-                Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[Spindexer.INSTANCE.freePosition()]).schedule();
+        double x = follower.getPose().getX();
+        double y = follower.getPose().getY();
+        Turret.INSTANCE.setVelocity(Turret.INSTANCE.distanceToVelocity(x, y, Aliance.RED));
+        Turret.INSTANCE.setHoodPosition(Turret.INSTANCE.distanceToPosition(x, y, Aliance.RED));
+
+        waitForVelocity();
+
+        Spindexer.INSTANCE.setToPosition(Spindexer.Position.POSITION_ONE);
+        tickPeriodicFor(SPINDEXER_SETTLE_MS);
+        flick(Spindexer.Position.POSITION_ONE);
+
+        Spindexer.INSTANCE.setToPosition(Spindexer.Position.POSITION_TWO);
+        tickPeriodicFor(SPINDEXER_SETTLE_MS);
+        flick(Spindexer.Position.POSITION_TWO);
+
+        Spindexer.INSTANCE.setToPosition(Spindexer.Position.POSITION_THREE);
+        tickPeriodicFor(SPINDEXER_SETTLE_MS);
+        flick(Spindexer.Position.POSITION_THREE);
+    }
+
+    /** Transfer up → wait → down → mark empty */
+    private void flick(Spindexer.Position position) {
+        Transfer.INSTANCE.transferUp();
+        sleep(TRANSFER_FLICK_UP_MS);
+        Transfer.INSTANCE.transferDown();
+        sleep(TRANSFER_FLICK_DOWN_MS);
+        Spindexer.INSTANCE.setColor(position, Spindexer.DetectedColor.EMPTY);
+    }
+
+    /** Switch to intake mode and spin up intake */
+    private void intakeMode() {
+        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+        Intake.INSTANCE.on();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Path following — blocks until Pedro reaches the end of the path
+    // ─────────────────────────────────────────────────────────────────────────
+    private void followPath(Path path) {
+        follower.followPath(path, true);
+        while (opModeIsActive() && follower.isBusy()) {
+            updatePeriodicSystems();
+            telemetry.addData("Following path", "busy");
+            telemetry.addData("x", follower.getPose().getX());
+            telemetry.addData("y", follower.getPose().getY());
+            telemetry.update();
+        }
+    }
+
+    /** Poll isAtVelocity() until true or timeout */
+    private void waitForVelocity() {
+        ElapsedTime timer = new ElapsedTime();
+        while (opModeIsActive()
+                && !Turret.INSTANCE.isAtVelocity()
+                && timer.milliseconds() < AT_VELOCITY_TIMEOUT_MS) {
+            Turret.INSTANCE.periodic();
+            Spindexer.INSTANCE.periodic();
+            Pinpoint.INSTANCE.periodic();
+        }
+    }
+
+    /** Run periodic systems for a set duration in ms */
+    private void tickPeriodicFor(long ms) {
+        ElapsedTime timer = new ElapsedTime();
+        while (opModeIsActive() && timer.milliseconds() < ms) {
+            updatePeriodicSystems();
+        }
+    }
+
+    /** Keep all subsystems ticking every loop */
+    private void updatePeriodicSystems() {
+        double x = follower.getPose().getX();
+        double y = follower.getPose().getY();
+
+        if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.SHOOT) {
+            Turret.INSTANCE.followGoalOdometryPositional(Aliance.RED);
+            Turret.INSTANCE.setVelocity(Turret.INSTANCE.distanceToVelocity(x, y, Aliance.RED));
+            Turret.INSTANCE.setHoodPosition(Turret.INSTANCE.distanceToPosition(x, y, Aliance.RED));
+        } else {
+            Turret.INSTANCE.setToAngle(270);
+            Turret.INSTANCE.setVelocity(500); // warm during intake driving
+        }
+
+        if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE) {
+            int free = Spindexer.INSTANCE.freePosition();
+            if (free != -1) {
+                Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
             }
         }
 
-        else if(Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.SHOOT){
-            Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition()).schedule();
-            Turret.INSTANCE.followGoalOdometryPositional(Aliance.RED,10).schedule();
-            velocity = Turret.INSTANCE.distanceToVelocity(follower().getPose().getX(), follower().getPose().getY(), Aliance.RED);
-            hoodPosition = Turret.INSTANCE.distanceToPosition(follower().getPose().getX(), follower().getPose().getY(), Aliance.RED);
-        }
-        endPose = follower().getPose();
-        Turret.INSTANCE.setVelocity(velocity).schedule();
-        Turret.INSTANCE.setHoodPosition(hoodPosition).schedule();
+        follower.update();
         Turret.INSTANCE.periodic();
         Spindexer.INSTANCE.periodic();
-
+        Pinpoint.INSTANCE.periodic();
     }
 
-    public static Pose getEndPose(){
-        return endPose;
-    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Paths — coordinates from Cheick's original RedCloseSixBallAuto
+    // ─────────────────────────────────────────────────────────────────────────
+    private void buildPaths() {
+        // p1: start → shoot position (mirror of blue p1)
+        p1 = new Path(new BezierLine(
+                new Pose(116.816, 130.041),
+                new Pose(82.285, 94.224)
+        ));
+        p1.setLinearHeadingInterpolation(Math.toRadians(38), Math.toRadians(0));
 
+        // p2: shoot position → curve to start of row 1
+        p2 = new Path(new BezierCurve(
+                new Pose(82.285, 94.224),
+                new Pose(80.449, 54.735),
+                new Pose(107.796, 59.714)
+        ));
+        p2.setConstantHeadingInterpolation(Math.toRadians(0));
+
+        // p3: sweep through row 1 balls
+        p3 = new Path(new BezierLine(
+                new Pose(107.796, 59.714),
+                new Pose(122.367, 59.755)
+        ));
+        p3.setConstantHeadingInterpolation(Math.toRadians(0));
+
+        // p4: return to shoot position
+        p4 = new Path(new BezierLine(
+                new Pose(122.367, 59.755),
+                new Pose(82.163, 93.878)
+        ));
+        p4.setConstantHeadingInterpolation(Math.toRadians(0));
+    }
 }

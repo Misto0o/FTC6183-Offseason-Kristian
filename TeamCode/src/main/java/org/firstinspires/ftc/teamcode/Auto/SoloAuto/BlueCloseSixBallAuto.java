@@ -19,7 +19,8 @@ import org.firstinspires.ftc.teamcode.robot.Spindexer;
 import org.firstinspires.ftc.teamcode.robot.Transfer;
 import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
-
+import org.firstinspires.ftc.teamcode.Utils.MatchPattern;
+import org.firstinspires.ftc.teamcode.Vision.Limelight;
 @Config
 @Autonomous(name = "Blue Close Six Ball Auto", group = "Blue")
 public class BlueCloseSixBallAuto extends LinearOpMode {
@@ -50,7 +51,9 @@ public class BlueCloseSixBallAuto extends LinearOpMode {
         );
         Transfer.INSTANCE.initialize(hardwareMap);
         Turret.INSTANCE.initialize(hardwareMap);
+        MatchPattern.reset();
         Pinpoint.INSTANCE.init(hardwareMap);
+        Limelight.INSTANCE.initialize(hardwareMap);
 
         buildPaths();
 
@@ -58,7 +61,14 @@ public class BlueCloseSixBallAuto extends LinearOpMode {
         telemetry.addData("Alliance", "BLUE");
         telemetry.update();
 
-        waitForStart();
+        while (!isStarted() && !isStopRequested()) {
+            MatchPattern.tryDetect();
+            telemetry.addLine("Ready — Blue Close Six Ball Auto");
+            telemetry.addData("Alliance", "BLUE");
+            telemetry.addData("Pattern", MatchPattern.getPattern());
+            telemetry.addData("Pattern Locked", MatchPattern.isLocked());
+            telemetry.update();
+        }
         if (!opModeIsActive()) return;
 
         // ── Set starting pose ─────────────────────────────────────────────────
