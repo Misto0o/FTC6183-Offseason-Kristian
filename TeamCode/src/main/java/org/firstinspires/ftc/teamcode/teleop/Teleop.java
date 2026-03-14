@@ -51,7 +51,7 @@ public class Teleop extends OpMode {
     // ── Shoot verify dwell ────────────────────────────────────────────────────
     // After each flick, wait shootVerifySec then check if that slot is still
     // showing a ball (jammed). If so, seek back and re-flick automatically.
-    public static double shootVerifySec = 0.3; // tunable on dashboard
+    public static double shootVerifySec = 0.6; // tunable on dashboard
     private int retrySlot = -1; // which slot we just tried to shoot
 
     // ── Spindexer intake dwell ────────────────────────────────────────────────

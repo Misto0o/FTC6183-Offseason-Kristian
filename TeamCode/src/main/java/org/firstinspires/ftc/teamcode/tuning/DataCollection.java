@@ -5,6 +5,7 @@ import com.acmerobotics.dashboard.config.Config;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
@@ -21,21 +22,45 @@ import org.firstinspires.ftc.teamcode.Utils.Aliance;
 @TeleOp(name = "DataCollection")
 public class DataCollection extends OpMode {
 
-    public static double velocity        = 0;
-    public static double hoodPosition    = 0;
-    public static double offsetVelocity  = 0;
-    public static double shootThreshold  = 100;
+    // ── Dashboard-tunable ─────────────────────────────────────────────────────
+    public static double intakeDwellSec = 0.3;
+    public static double shootVerifySec = 0.3;
 
-    public boolean shootcycle = false;
+    // ── Hardcoded alliance ────────────────────────────────────────────────────
+    private final Aliance currentAliance = Aliance.BLUE;
 
-    private boolean prevCircle, prevCross, prevTriangle, prevSquare;
-    private boolean prevDpadLeft, prevLeftBumper, prevRightBumper;
+    // ── Odometry start pose ───────────────────────────────────────────────────
+    private static final double START_X   = 8.5;
+    private static final double START_Y   = 8.875;
+    private static final double START_HDG = 90;
 
-    private boolean intakeToggle, modeToggle, reverseToggle;
+    // ── Mode flags ────────────────────────────────────────────────────────────
+    private boolean shootMode    = false;
+    private boolean intakeOn     = false;
+    private boolean transferDown = true;
 
-    private double transferFlickTimer = -1;
-    private int    transferFlickStage =  0;
+    // ── Transfer flick state machine ──────────────────────────────────────────
+    private enum FlickState { IDLE, WAIT_UP, WAIT_DOWN, VERIFY }
+    private FlickState flickState = FlickState.IDLE;
+    private final ElapsedTime flickTimer = new ElapsedTime();
 
+    // ── Shoot verify ──────────────────────────────────────────────────────────
+    private int retrySlot = -1;
+
+    // ── Spindexer intake dwell ────────────────────────────────────────────────
+    private final ElapsedTime dwellTimer = new ElapsedTime();
+    private boolean dwelling = false;
+
+    // ── Turret/hood (set automatically from odometry) ─────────────────────────
+    private double targetVelocity = 0;
+    private double targetHood     = 1.0;
+
+    // ── Button edge detection ─────────────────────────────────────────────────
+    private boolean lastCircle, lastCross, lastSquare, lastTriangle;
+    private boolean lastLeftBumper, lastRightBumper;
+    private boolean lastDpadDown;
+
+    // ─────────────────────────────────────────────────────────────────────────
     @Override
     public void init() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
@@ -50,157 +75,264 @@ public class DataCollection extends OpMode {
         );
         Intake.INSTANCE.init(hardwareMap);
         Pinpoint.INSTANCE.init(hardwareMap);
+
+        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+
+        telemetry.addLine("Alliance: BLUE (hardcoded)");
+        telemetry.update();
     }
 
     @Override
     public void start() {
-        Pinpoint.INSTANCE.updatePosition(
-                new Pose2D(DistanceUnit.INCH, 8.5, 8.875, AngleUnit.DEGREES, 90)
-        );
+        resetOdometry();
     }
 
     @Override
     public void loop() {
-        handleButtons();
-        tickTransferFlick();
-        updateSpindexer();
-        updateTurret();
-        updateTelemetry();
+        // ── Read inputs ───────────────────────────────────────────────────────
+        boolean circle       = gamepad1.circle;
+        boolean cross        = gamepad1.cross;
+        boolean square       = gamepad1.square;
+        boolean triangle     = gamepad1.triangle;
+        boolean leftBumper   = gamepad1.left_bumper;
+        boolean rightBumper  = gamepad1.right_bumper;
+        boolean dpadLeft     = gamepad1.dpad_left;   // hold to reverse intake
+        boolean dpadDown     = gamepad1.dpad_down;
+        boolean rightTrigger = gamepad1.right_trigger > 0.3;
+        boolean leftTrigger  = gamepad1.left_trigger  > 0.3;
 
+        // ── Triangle: switch to intake mode ───────────────────────────────────
+        if (triangle && !lastTriangle) {
+            intakeOn  = true;
+            shootMode = false;
+            dwelling  = false;
+            Intake.INSTANCE.on();
+            Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+        }
+
+        // ── Circle: turn intake off OR switch to shoot mode ───────────────────
+        if (circle && !lastCircle) {
+            if (intakeOn) {
+                intakeOn = false;
+                dwelling = false;
+                Intake.INSTANCE.idle();
+            } else {
+                shootMode = true;
+                Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+            }
+        }
+
+        // ── Cross: manual transfer flick ──────────────────────────────────────
+        if (cross && !lastCross && flickState == FlickState.IDLE && transferDown) {
+            transferDown = false;
+            Transfer.INSTANCE.transferUp();
+            flickTimer.reset();
+            flickState = FlickState.WAIT_UP;
+        }
+
+        // ── Square: reset odometry ────────────────────────────────────────────
+        if (square && !lastSquare) resetOdometry();
+
+        // ── DPad Down: zero turret angle offset ───────────────────────────────
+        if (dpadDown && !lastDpadDown) Turret.INSTANCE.zeroAngleOffset();
+
+        // ── DPad Left (hold): reverse intake ──────────────────────────────────
+        if (dpadLeft) {
+            if (intakeOn) Intake.INSTANCE.reverse();
+            else          Intake.INSTANCE.idle();
+        }
+
+        // ── Triggers: fine-tune turret angle offset ───────────────────────────
+        if (rightTrigger) Turret.INSTANCE.updateAngleOffset(-0.1);
+        if (leftTrigger)  Turret.INSTANCE.updateAngleOffset(0.1);
+
+        // ── Bumpers: manual spindexer rotation ────────────────────────────────
+        if (leftBumper  && !lastLeftBumper)  Spindexer.Position.next();
+        if (rightBumper && !lastRightBumper) Spindexer.Position.previous();
+
+        // ── Transfer flick state machine ──────────────────────────────────────
+        switch (flickState) {
+            case WAIT_UP:
+                if (flickTimer.seconds() >= 0.5) {
+                    Transfer.INSTANCE.transferDown();
+                    flickTimer.reset();
+                    flickState = FlickState.WAIT_DOWN;
+                }
+                break;
+            case WAIT_DOWN:
+                if (flickTimer.seconds() >= 0.5) {
+                    retrySlot = Spindexer.INSTANCE.getPosition().ordinal();
+                    Spindexer.INSTANCE.setColor(
+                            Spindexer.INSTANCE.getPosition(),
+                            Spindexer.DetectedColor.EMPTY
+                    );
+                    transferDown = true;
+                    flickTimer.reset();
+                    flickState = FlickState.VERIFY;
+                }
+                break;
+            case VERIFY:
+                if (flickTimer.seconds() >= shootVerifySec) {
+                    Spindexer.DetectedColor check = Spindexer.INSTANCE.readCurrentColor();
+                    if (retrySlot != -1
+                            && retrySlot == Spindexer.INSTANCE.getPosition().ordinal()
+                            && (check == Spindexer.DetectedColor.GREEN
+                            || check == Spindexer.DetectedColor.PURPLE)) {
+                        // Jammed — re-stamp and retry
+                        Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), check);
+                        if (transferDown) {
+                            transferDown = false;
+                            Transfer.INSTANCE.transferUp();
+                            flickTimer.reset();
+                            flickState = FlickState.WAIT_UP;
+                        } else {
+                            flickState = FlickState.IDLE;
+                        }
+                    } else {
+                        retrySlot  = -1;
+                        flickState = FlickState.IDLE;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+
+        // ── Drivetrain ────────────────────────────────────────────────────────
+        Drivetrain.getInstance().drive(
+                -gamepad1.left_stick_x,
+                gamepad1.left_stick_y,
+                -gamepad1.right_stick_x
+        );
+
+        // ── Spindexer auto-rotate with dwell (intake mode) ────────────────────
+        if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE) {
+            if (intakeOn) {
+                Spindexer.DetectedColor seen = Spindexer.INSTANCE.readCurrentColor();
+                if (!dwelling) {
+                    dwelling = true;
+                    dwellTimer.reset();
+                } else if (dwellTimer.seconds() >= intakeDwellSec) {
+                    Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), seen);
+                    dwelling = false;
+                    Spindexer.INSTANCE.periodic();
+                    if (Spindexer.INSTANCE.getFull()) {
+                        shootMode = true;
+                        intakeOn  = false;
+                        Intake.INSTANCE.idle();
+                        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+                    } else {
+                        int free = Spindexer.INSTANCE.freePosition();
+                        if (free != -1) {
+                            Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
+                        }
+                    }
+                }
+            } else {
+                dwelling = false;
+            }
+        } else {
+            // ── Shoot mode: pre-position to next filled slot ──────────────────
+            dwelling = false;
+            Spindexer.INSTANCE.periodic();
+            if (transferDown) {
+                if (Spindexer.INSTANCE.getEmpty()) {
+                    shootMode = false;
+                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+                } else {
+                    int filled = Spindexer.INSTANCE.filledPosition();
+                    if (filled != -1) {
+                        Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[filled]);
+                    }
+                }
+            }
+        }
+
+        // ── Turret: auto velocity + hood from odometry ────────────────────────
+        double px = Pinpoint.INSTANCE.getPosX();
+        double py = Pinpoint.INSTANCE.getPosY();
+
+        if (!shootMode) {
+            targetVelocity = 500;
+            targetHood     = 1.0;
+            Turret.INSTANCE.setToAngle(270); // park away from intake
+        } else {
+            targetVelocity = Turret.INSTANCE.distanceToVelocity(px, py, currentAliance);
+            targetHood     = Turret.INSTANCE.distanceToPosition(px, py, currentAliance);
+            Turret.INSTANCE.followGoalOdometryPositional(currentAliance);
+        }
+
+        Turret.INSTANCE.setVelocity(targetVelocity);
+        Turret.INSTANCE.setHoodPosition(targetHood);
+
+        // ── Rumble: ball detected during intake ───────────────────────────────
+        Spindexer.DetectedColor detected = intakeOn
+                ? Spindexer.INSTANCE.readCurrentColor()
+                : Spindexer.DetectedColor.EMPTY;
+        if (detected == Spindexer.DetectedColor.GREEN) {
+            gamepad1.rumble(1.0, 0.0, 200);
+        } else if (detected == Spindexer.DetectedColor.PURPLE) {
+            gamepad1.rumble(0.0, 1.0, 200);
+        }
+
+        // ── Periodic ─────────────────────────────────────────────────────────
         Pinpoint.INSTANCE.periodic();
         Turret.INSTANCE.periodic();
-        Spindexer.INSTANCE.periodic();
+
+        // ── Telemetry ─────────────────────────────────────────────────────────
+        telemetry.addLine("── MATCH ────────────────────────────────");
+        telemetry.addData("Alliance",      "BLUE (hardcoded)");
+        telemetry.addData("Mode",          shootMode ? "SHOOT" : "INTAKE");
+        telemetry.addData("Intake",        intakeOn  ? "ON"    : "OFF");
+
+        telemetry.addLine("── ODOMETRY ─────────────────────────────");
+        telemetry.addData("x",       px);
+        telemetry.addData("y",       py);
+        telemetry.addData("Heading", Pinpoint.INSTANCE.getHeading());
+        telemetry.addData("360 Heading", (((Pinpoint.INSTANCE.getHeading() % 360) + 360) % 360));
+
+        telemetry.addLine("── TURRET ───────────────────────────────");
+        telemetry.addData("Turret Angle Set",   Turret.INSTANCE.getTurretAngleSet());
+        telemetry.addData("Turret Power Set",   Turret.INSTANCE.getTurretPowerSet());
+        telemetry.addData("Velocity (actual)",  (int) Turret.INSTANCE.getVelocity());
+        telemetry.addData("Velocity (target)",  (int) targetVelocity);
+        telemetry.addData("Hood (target)",      targetHood);
+
+        telemetry.addLine("── SPINDEXER ────────────────────────────");
+        telemetry.addData("Transfer Down",    transferDown);
+        telemetry.addData("Flick State",      flickState);
+        telemetry.addData("Retry Slot",       retrySlot != -1 ? "Slot " + retrySlot : "none");
+        telemetry.addData("Dwell Active",     dwelling);
+        telemetry.addData("Detected Color",   detected);
+        telemetry.addData("Ball Pos 1",       Spindexer.INSTANCE.getBallAtPosition()[0]);
+        telemetry.addData("Ball Pos 2",       Spindexer.INSTANCE.getBallAtPosition()[1]);
+        telemetry.addData("Ball Pos 3",       Spindexer.INSTANCE.getBallAtPosition()[2]);
+        telemetry.addData("Current Position", Spindexer.INSTANCE.getPosition());
+        telemetry.addData("Free Position",    Spindexer.INSTANCE.freePosition());
+        telemetry.addData("Empty",            Spindexer.INSTANCE.getEmpty());
+        telemetry.addData("Full",             Spindexer.INSTANCE.getFull());
 
         telemetry.update();
+
+        // ── Save last button state ────────────────────────────────────────────
+        lastCircle      = circle;
+        lastCross       = cross;
+        lastSquare      = square;
+        lastTriangle    = triangle;
+        lastLeftBumper  = leftBumper;
+        lastRightBumper = rightBumper;
+        lastDpadDown    = dpadDown;
     }
 
-    private void handleButtons() {
-        boolean circle      = gamepad1.circle;
-        boolean cross       = gamepad1.cross;
-        boolean triangle    = gamepad1.triangle;
-        boolean square      = gamepad1.square;
-        boolean dpadLeft    = gamepad1.dpad_left;
-        boolean leftBumper  = gamepad1.left_bumper;
-        boolean rightBumper = gamepad1.right_bumper;
-
-        // Circle — toggle intake on/off
-        if (circle && !prevCircle) {
-            intakeToggle = !intakeToggle;
-            if (intakeToggle) Intake.INSTANCE.on();
-            else              Intake.INSTANCE.idle();
-        }
-
-        // Cross — trigger transfer flick
-        if (cross && !prevCross) scheduleTransferFlick();
-
-        // Triangle — toggle intake/shoot mode
-        if (triangle && !prevTriangle) {
-            modeToggle = !modeToggle;
-            Spindexer.INSTANCE.setPositionType(
-                    modeToggle ? Spindexer.PositionType.SHOOT : Spindexer.PositionType.INTAKE
-            );
-        }
-
-        // Square — reset odometry
-        if (square && !prevSquare) {
-            Pinpoint.INSTANCE.updatePosition(
-                    new Pose2D(DistanceUnit.INCH, 8.5, 8.875, AngleUnit.DEGREES, 90)
-            );
-        }
-
-        // DpadLeft — toggle reverse intake
-        if (dpadLeft && !prevDpadLeft) {
-            reverseToggle = !reverseToggle;
-            if (reverseToggle) Intake.INSTANCE.reverse();
-            else               Intake.INSTANCE.idle();
-        }
-
-        if (leftBumper  && !prevLeftBumper)  Spindexer.Position.next();
-        if (rightBumper && !prevRightBumper) Spindexer.Position.previous();
-
-        prevCircle      = circle;
-        prevCross       = cross;
-        prevTriangle    = triangle;
-        prevSquare      = square;
-        prevDpadLeft    = dpadLeft;
-        prevLeftBumper  = leftBumper;
-        prevRightBumper = rightBumper;
-    }
-
-    private void scheduleTransferFlick() {
-        if (transferFlickStage != 0) return;
-        transferFlickTimer = getRuntime();
-        transferFlickStage = 1;
-        Transfer.INSTANCE.transferUp();
-    }
-
-    private void tickTransferFlick() {
-        if (transferFlickStage == 0) return;
-        double elapsed = getRuntime() - transferFlickTimer;
-        if (transferFlickStage == 1 && elapsed >= 0.5) {
-            Transfer.INSTANCE.transferDown();
-            transferFlickTimer = getRuntime();
-            transferFlickStage = 2;
-        } else if (transferFlickStage == 2 && elapsed >= 0.5) {
-            Spindexer.INSTANCE.setColor(
-                    Spindexer.INSTANCE.getPosition(),
-                    Spindexer.DetectedColor.EMPTY
-            );
-            transferFlickStage = 0;
-        }
-    }
-
-    private void updateSpindexer() {
-        if (Spindexer.INSTANCE.freePosition() != -1
-                && Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE
-                && !shootcycle) {
-            Spindexer.INSTANCE.setToPosition(
-                    Spindexer.Position.values()[Spindexer.INSTANCE.freePosition()]
-            );
-        } else if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.SHOOT
-                && Spindexer.INSTANCE.filledPosition() != -1
-                && !shootcycle) {
-            Spindexer.INSTANCE.setToPosition(
-                    Spindexer.Position.values()[Spindexer.INSTANCE.filledPosition()]
-            );
-        } else {
-            Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition());
-        }
-    }
-
-    private void updateTurret() {
-        if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE) {
-            velocity = 500;
-            Turret.INSTANCE.setToAngle(270);
-        } else {
-            velocity = Turret.INSTANCE.distanceToVelocity(
-                    Pinpoint.INSTANCE.getPosX(), Pinpoint.INSTANCE.getPosY(), Aliance.BLUE
-            );
-        }
-        hoodPosition = Turret.INSTANCE.distanceToPosition(
-                Pinpoint.INSTANCE.getPosX(), Pinpoint.INSTANCE.getPosY(), Aliance.BLUE
+    private void resetOdometry() {
+        Pinpoint.INSTANCE.updatePosition(
+                new Pose2D(DistanceUnit.INCH, START_X, START_Y, AngleUnit.DEGREES, START_HDG)
         );
-        Turret.INSTANCE.setVelocity(velocity);
-        Turret.INSTANCE.setHoodPosition(hoodPosition);
     }
 
-    private void updateTelemetry() {
-        telemetry.addData("Turret Angle Set",       Turret.INSTANCE.getTurretAngleSet());
-        telemetry.addData("x",                      Pinpoint.INSTANCE.getPosX());
-        telemetry.addData("y",                      Pinpoint.INSTANCE.getPosY());
-        telemetry.addData("Heading",                Pinpoint.INSTANCE.getHeading());
-        telemetry.addData("360 Heading",            (((Pinpoint.INSTANCE.getHeading() % 360) + 360) % 360));
-        telemetry.addData("Turret Power Set",       Turret.INSTANCE.getTurretPowerSet());
-        telemetry.addData("Shooter Velocity",       Turret.INSTANCE.getVelocity());
-        telemetry.addData("Set Velocity",           velocity);
-        telemetry.addData("Hood Position",          hoodPosition);
-        telemetry.addData("Current Color",          Spindexer.INSTANCE.readCurrentColor());
-        telemetry.addData("Ball at Position One",   Spindexer.INSTANCE.getBallAtPosition()[0]);
-        telemetry.addData("Ball at Position Two",   Spindexer.INSTANCE.getBallAtPosition()[1]);
-        telemetry.addData("Ball at Position Three", Spindexer.INSTANCE.getBallAtPosition()[2]);
-        telemetry.addData("Spindexer Position",     Spindexer.INSTANCE.getPosition());
-        telemetry.addData("Mode",                   Spindexer.INSTANCE.getPositionType());
-        telemetry.addData("Empty",                  Spindexer.INSTANCE.getEmpty());
-        telemetry.addData("Full",                   Spindexer.INSTANCE.getFull());
+    @Override
+    public void stop() {
+        Turret.INSTANCE.setVelocity(0);
+        Intake.INSTANCE.idle();
     }
 }
