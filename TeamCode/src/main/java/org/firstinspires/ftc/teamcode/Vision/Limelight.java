@@ -25,21 +25,34 @@ public class Limelight {
         try {
             limelight = hardwareMap.get(Limelight3A.class, "limelight");
             limelight.setPollRateHz(100);
+            limelight.start();
         } catch (Exception e) {
-            limelight = null; // unplugged or not configured — all methods null-check safely
+            limelight = null;
         }
     }
 
-    public void start() { limelight.start(); }
-    public void stop()  { limelight.stop();  }
+    public void start() {
+        if (limelight != null) limelight.start();
+    }
 
-    public double angleFromTag(double tagID) {
+    public void stop() {
+        if (limelight != null) limelight.stop();
+    }
+
+    /** Raw result for debugging — shows every fiducial ID the Limelight currently sees. */
+    public LLResult getRawResult() {
+        if (limelight == null) return null;
+        limelight.start();
+        return limelight.getLatestResult();
+    }
+
+    public double angleFromTag(int tagID) {
         if (limelight == null) return -1;
         limelight.start();
         LLResult latest = limelight.getLatestResult();
         if (latest == null) return -1;
         List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();
-        if (r.isEmpty()) return -1;
+        if (r == null || r.isEmpty()) return -1;
         for (LLResultTypes.FiducialResult fiducial : r) {
             if (fiducial.getFiducialId() == tagID) {
                 return fiducial.getTargetXDegrees();
@@ -48,18 +61,18 @@ public class Limelight {
         return -1;
     }
 
-    public double distanceFromTag(double tagID) {
+    public double distanceFromTag(int tagID) {
         if (limelight == null) return 0;
         limelight.start();
         LLResult latest = limelight.getLatestResult();
         if (latest == null) return 0;
         List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();
-        if (r.isEmpty()) return 0;
+        if (r == null || r.isEmpty()) return 0;
         for (LLResultTypes.FiducialResult fiducial : r) {
             if (fiducial.getFiducialId() == tagID) {
                 double x = (fiducial.getCameraPoseTargetSpace().getPosition().x / DistanceUnit.mPerInch) + 16;
                 double z = (fiducial.getCameraPoseTargetSpace().getPosition().z / DistanceUnit.mPerInch) + 16;
-                return Math.sqrt(x * x + z * z); // plain Pythagorean, no Pedro Vector needed
+                return Math.sqrt(x * x + z * z);
             }
         }
         return 0;
@@ -71,7 +84,7 @@ public class Limelight {
         LLResult latest = limelight.getLatestResult();
         if (latest == null) return -1;
         List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();
-        if (r.isEmpty()) return -1;
+        if (r == null || r.isEmpty()) return -1;
         for (LLResultTypes.FiducialResult fiducial : r) {
             int id = fiducial.getFiducialId();
             if (id == GPP_PATTERN_ID || id == PGP_PATTERN_ID || id == PPG_PATTERN_ID) {

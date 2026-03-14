@@ -45,8 +45,8 @@ public class DataCollection extends OpMode {
         Transfer.INSTANCE.initialize(hardwareMap);
         Spindexer.INSTANCE.initialize(
                 hardwareMap.get(com.qualcomm.robotcore.hardware.Servo.class, "spinServo"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColor"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColor")
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColorSensor"),
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColorSensor")
         );
         Intake.INSTANCE.init(hardwareMap);
         Pinpoint.INSTANCE.init(hardwareMap);

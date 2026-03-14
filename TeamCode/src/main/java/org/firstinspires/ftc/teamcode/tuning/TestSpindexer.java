@@ -63,8 +63,8 @@ public class TestSpindexer extends OpMode {
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
                 hardwareMap.servo.get("spinServo"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColor"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColor")
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColorSensor"),
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColorSensor")
         );
         Transfer.INSTANCE.initialize(hardwareMap);
         Turret.INSTANCE.initialize(hardwareMap);
@@ -88,8 +88,10 @@ public class TestSpindexer extends OpMode {
 
         // Left bumper — next position
         if (leftBumper && !prevLeftBumper)   Spindexer.Position.next();
+        Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition());
         // Right bumper — previous position
         if (rightBumper && !prevRightBumper) Spindexer.Position.previous();
+        Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition());
 
         // Cross — start shoot-three sequence
         if (cross && !prevCross && shootState == ShootState.IDLE) {

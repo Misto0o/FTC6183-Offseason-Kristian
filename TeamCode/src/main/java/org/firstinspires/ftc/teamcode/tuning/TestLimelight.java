@@ -1,10 +1,14 @@
 package org.firstinspires.ftc.teamcode.tuning;
 
+import com.qualcomm.hardware.limelightvision.LLResult;
+import com.qualcomm.hardware.limelightvision.LLResultTypes;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 
 import org.firstinspires.ftc.teamcode.robot.Drivetrain;
 import org.firstinspires.ftc.teamcode.Vision.Limelight;
+
+import java.util.List;
 
 @TeleOp(name = "TestLimelight")
 public class TestLimelight extends OpMode {
@@ -23,15 +27,40 @@ public class TestLimelight extends OpMode {
                 gamepad1.right_stick_x
         );
 
-        telemetry.addData("Distance From Blue Tag", Limelight.INSTANCE.distanceFromTag(Limelight.BLUE_GOAL_ID));
-        telemetry.addData("Distance From Red Tag",  Limelight.INSTANCE.distanceFromTag(Limelight.RED_GOAL_ID));
-        telemetry.addData("Angle From Blue Tag",    Limelight.INSTANCE.angleFromTag(Limelight.BLUE_GOAL_ID));
-        telemetry.addData("Angle From Red Tag",     Limelight.INSTANCE.angleFromTag(Limelight.RED_GOAL_ID));
-        telemetry.addData("Pattern of Obelisk",
-                Limelight.INSTANCE.patternFromObelisk() == Limelight.GPP_PATTERN_ID ? "GPP" :
-                        Limelight.INSTANCE.patternFromObelisk() == Limelight.PGP_PATTERN_ID ? "PGP" :
-                                Limelight.INSTANCE.patternFromObelisk() == Limelight.PPG_PATTERN_ID ? "PPG" :
-                                        "Can't be found");
+        // ── High-level results ────────────────────────────────────────────────
+        telemetry.addLine("── GOAL TAGS ────────────────────────────");
+        telemetry.addData("Dist Blue (20)",  Limelight.INSTANCE.distanceFromTag(Limelight.BLUE_GOAL_ID));
+        telemetry.addData("Dist Red  (24)",  Limelight.INSTANCE.distanceFromTag(Limelight.RED_GOAL_ID));
+        telemetry.addData("Angle Blue (20)", Limelight.INSTANCE.angleFromTag(Limelight.BLUE_GOAL_ID));
+        telemetry.addData("Angle Red  (24)", Limelight.INSTANCE.angleFromTag(Limelight.RED_GOAL_ID));
+
+        telemetry.addLine("── MOTIF ────────────────────────────────");
+        int pattern = Limelight.INSTANCE.patternFromObelisk();
+        telemetry.addData("Pattern", pattern == Limelight.GPP_PATTERN_ID ? "GPP" :
+                pattern == Limelight.PGP_PATTERN_ID ? "PGP" :
+                        pattern == Limelight.PPG_PATTERN_ID ? "PPG" : "NOT FOUND (" + pattern + ")");
+
+        // ── Raw debug — shows EVERY fiducial the Limelight currently sees ─────
+        // This is the key section: if the motif is visible but not matching,
+        // you'll see the actual IDs here so we know what to fix.
+        telemetry.addLine("── RAW FIDUCIALS (all seen) ─────────────");
+        LLResult raw = Limelight.INSTANCE.getRawResult();
+        if (raw == null) {
+            telemetry.addData("LLResult", "NULL — limelight not connected");
+        } else {
+            List<LLResultTypes.FiducialResult> fiducials = raw.getFiducialResults();
+            if (fiducials == null || fiducials.isEmpty()) {
+                telemetry.addData("Fiducials", "NONE DETECTED");
+            } else {
+                telemetry.addData("Fiducial count", fiducials.size());
+                for (int i = 0; i < fiducials.size(); i++) {
+                    LLResultTypes.FiducialResult f = fiducials.get(i);
+                    telemetry.addData("  Tag[" + i + "] ID", f.getFiducialId());
+                    telemetry.addData("  Tag[" + i + "] X°", f.getTargetXDegrees());
+                }
+            }
+        }
+
         telemetry.update();
     }
 

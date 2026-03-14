@@ -59,8 +59,8 @@ public class Move1tile extends LinearOpMode {
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
                 hardwareMap.servo.get("spinServo"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColor"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColor")
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColorSensor"),
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColorSensor")
         );
         Transfer.INSTANCE.initialize(hardwareMap);
         Turret.INSTANCE.initialize(hardwareMap);

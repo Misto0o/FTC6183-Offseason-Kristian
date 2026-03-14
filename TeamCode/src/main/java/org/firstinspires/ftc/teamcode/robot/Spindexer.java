@@ -16,8 +16,9 @@ public class Spindexer {
     public static double dValue = 0.001;
     public static double kE     = 1;
 
-    public static long  detectionDelay = 350;
-    public static double maxPower      = 0.3;
+    // detectionDelay is no longer used for auto-stamping — kept for dashboard visibility only
+    public static long   detectionDelay = 350;
+    public static double maxPower       = 0.3;
     public static float plUpper = 250, plLower = 210;
     public static float glUpper = 170, glLower = 145;
     public static float prUpper = 240, prLower = 200;
@@ -33,8 +34,6 @@ public class Spindexer {
     private Servo spinServo;
     private NormalizedColorSensor leftColorSensor;
     private NormalizedColorSensor rightColorSensor;
-
-    private long lastDetectionTime = 0;
 
     // -------------------------------------------------------------------------
     // Enums
@@ -81,13 +80,13 @@ public class Spindexer {
     public static Position     currentPosition = Position.POSITION_ONE;
     public static PositionType positionType    = PositionType.SHOOT;
 
-    public static double intakePositionOne   = 0.05;
-    public static double intakePositionTwo   = 0.42;
-    public static double intakePositionThree = 0.79;
+    public static double intakePositionOne   = 0;
+    public static double intakePositionTwo   = 0.375;
+    public static double intakePositionThree = 0.735;
 
-    public static double shootPositionOne   = 0.25;
-    public static double shootPositionTwo   = 0.62;
-    public static double shootPositionThree = 1.0;
+    public static double shootPositionOne   = 0.55;
+    public static double shootPositionTwo   = 0.175;
+    public static double shootPositionThree = 0.925;
 
     public static double[] intakePositions = {intakePositionOne, intakePositionTwo, intakePositionThree};
     public static double[] shootPositions  = {shootPositionOne,  shootPositionTwo,  shootPositionThree};
@@ -121,7 +120,9 @@ public class Spindexer {
     /** Move servo to the given position in whichever mode is active. */
     public void setToPosition(Position position) {
         currentPosition = position;
-        double[] positions = (positionType == PositionType.INTAKE) ? intakePositions : shootPositions;
+        double[] positions = (positionType == PositionType.INTAKE)
+                ? new double[]{intakePositionOne, intakePositionTwo, intakePositionThree}
+                : new double[]{shootPositionOne, shootPositionTwo, shootPositionThree};
         if (spinServo != null) spinServo.setPosition(positions[position.ordinal()]);
     }
 
@@ -176,30 +177,34 @@ public class Spindexer {
         return -1;
     }
 
-    /** Manually set the stored color for a given slot (e.g. mark EMPTY after a flick). */
+    /**
+     * Manually set the stored color for a given slot.
+     * This is the ONLY way ballAtPosition gets written — readCurrentColor()
+     * no longer auto-stamps so there are no false positives on startup.
+     */
     public void setColor(Position position, DetectedColor color) {
-        ballAtPosition[position.ordinal()] = color;  // fixed: was using currentPosition
+        ballAtPosition[position.ordinal()] = color;
     }
 
     // -------------------------------------------------------------------------
     // Color sensing
     // -------------------------------------------------------------------------
+
+    /**
+     * Reads the color sensors and returns what they currently see.
+     * DOES NOT write to ballAtPosition — callers must call setColor() explicitly
+     * after confirming the reading (e.g. after a dwell timer).
+     * This prevents false-full on startup and double-counting during fast rotation.
+     */
     public DetectedColor readCurrentColor() {
-        long currentTime = System.currentTimeMillis();
+        if (leftColorSensor == null || rightColorSensor == null) return DetectedColor.EMPTY;
         leftColorSensor.setGain(2);
         rightColorSensor.setGain(2);
         NormalizedRGBA colorsLeft  = leftColorSensor.getNormalizedColors();
         NormalizedRGBA colorsRight = rightColorSensor.getNormalizedColors();
         Color.colorToHSV(colorsLeft.toColor(),  hsvValuesLeft);
         Color.colorToHSV(colorsRight.toColor(), hsvValuesRight);
-
-        DetectedColor currentColor = DetectedColor.getDetectedColor(hsvValuesLeft, hsvValuesRight);
-        if (positionType == PositionType.INTAKE
-                && (currentTime - lastDetectionTime) >= detectionDelay) {
-            ballAtPosition[currentPosition.ordinal()] = currentColor;
-            lastDetectionTime = currentTime;
-        }
-        return currentColor;
+        return DetectedColor.getDetectedColor(hsvValuesLeft, hsvValuesRight);
     }
 
     // -------------------------------------------------------------------------
@@ -208,11 +213,10 @@ public class Spindexer {
     public void checkSpindexerState() {
         boolean allEmpty = true;
         boolean allFull  = true;
-        // reset first
         empty = false;
         full  = false;
         for (DetectedColor ball : ballAtPosition) {
-            if (ball == DetectedColor.EMPTY)                             allFull  = false;
+            if (ball == DetectedColor.EMPTY)                                 allFull  = false;
             if (ball == DetectedColor.GREEN || ball == DetectedColor.PURPLE) allEmpty = false;
         }
         empty = allEmpty;
@@ -230,7 +234,6 @@ public class Spindexer {
     public boolean getEmpty()                        { return empty; }
     public boolean getFull()                         { return full; }
 
-    /** Returns servo position as a proxy for "power" (standard servo has no power value). */
     public double getPower() {
         if (spinServo == null) return 0;
         return spinServo.getPosition();

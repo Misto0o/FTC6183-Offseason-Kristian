@@ -10,8 +10,8 @@ public class Transfer {
     private Servo leftFork;
     private Servo rightFork;
 
-    private double leftUp = 1;
-    private double rightUp = 0;
+    private double leftUp = 0.8;
+    private double rightUp = 0.2;
 
     private double leftDown = 0;
     private double rightDown = 1;

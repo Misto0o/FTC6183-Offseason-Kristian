@@ -4,8 +4,7 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.hardware.bosch.BNO055IMU;
-
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 public class Drivetrain {
 
     private static Drivetrain INSTANCE;
@@ -14,7 +13,7 @@ public class Drivetrain {
     private DcMotorEx backLeftMotor;
     private DcMotorEx frontRightMotor;
     private DcMotorEx backRightMotor;
-    private BNO055IMU imu;
+    private IMU imu;
 
     private double turnSpeed = 1;
 
@@ -28,33 +27,37 @@ public class Drivetrain {
     }
 
     public void init(HardwareMap hardwareMap) {
-        frontLeftMotor = hardwareMap.get(DcMotorEx.class, "fl");
-        backLeftMotor = hardwareMap.get(DcMotorEx.class, "bl");
+        frontLeftMotor  = hardwareMap.get(DcMotorEx.class, "fl");
+        backLeftMotor   = hardwareMap.get(DcMotorEx.class, "bl");
         frontRightMotor = hardwareMap.get(DcMotorEx.class, "fr");
-        backRightMotor = hardwareMap.get(DcMotorEx.class, "br");
+        backRightMotor  = hardwareMap.get(DcMotorEx.class, "br");
 
         frontLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         backLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         frontRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         backRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        // Reverse motors if necessary
         frontLeftMotor.setDirection(DcMotor.Direction.REVERSE);
-        frontRightMotor.setDirection(DcMotor.Direction.REVERSE);
+        backLeftMotor.setDirection(DcMotor.Direction.REVERSE);
+        frontRightMotor.setDirection(DcMotor.Direction.FORWARD);
+        backRightMotor.setDirection(DcMotor.Direction.REVERSE);
 
         // Initialize IMU
-        BNO055IMU.Parameters parameters = new BNO055IMU.Parameters();
-        parameters.angleUnit = BNO055IMU.AngleUnit.DEGREES;
-        imu = hardwareMap.get(BNO055IMU.class, "imu");
-        imu.initialize(parameters);
+        imu = hardwareMap.get(IMU.class, "imu");
+        imu.initialize(new IMU.Parameters(
+                new RevHubOrientationOnRobot(
+                        RevHubOrientationOnRobot.LogoFacingDirection.UP,
+                        RevHubOrientationOnRobot.UsbFacingDirection.FORWARD
+                )
+        ));
     }
-
+    //strafing code
     public void drive(double y, double x, double rx) {
         double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
-        double fl = (y + x + rx) / denominator;
-        double bl = (y - x + rx) / denominator;
-        double fr = (y - x - rx) / denominator;
-        double br = (y + x - rx) / denominator;
+        double fl = (x + y + rx) / denominator;  // swapped x and y
+        double bl = (x - y + rx) / denominator;  // swapped x and y
+        double fr = (x - y - rx) / denominator;  // swapped x and y
+        double br = (x + y - rx) / denominator;  // swapped x and y
 
         frontLeftMotor.setPower(fl * turnSpeed);
         backLeftMotor.setPower(bl * turnSpeed);

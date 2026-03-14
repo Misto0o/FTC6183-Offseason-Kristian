@@ -42,8 +42,8 @@ public class FullTest extends OpMode {
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
                 hardwareMap.servo.get("spinServo"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColor"),
-                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColor")
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "leftColorSensor"),
+                hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColorSensor")
         );
         Transfer.INSTANCE.initialize(hardwareMap);
         Turret.INSTANCE.initialize(hardwareMap);
@@ -68,7 +68,7 @@ public class FullTest extends OpMode {
             if (circleToggle) {
                 type = "Shoot";
                 Intake.INSTANCE.idle();
-                Turret.INSTANCE.setVelocity(1000);
+                Turret.INSTANCE.setVelocity(6000);
                 flickState = FlickState.UP;
                 Transfer.INSTANCE.transferUp();
                 flickTimer.reset();
@@ -114,14 +114,20 @@ public class FullTest extends OpMode {
         }
 
         // ── Bumpers: spindexer position ───────────────────────────────────
-        if (leftBumper  && !lastLeftBumper)  Spindexer.Position.next();
-        if (rightBumper && !lastRightBumper) Spindexer.Position.previous();
+        if (leftBumper && !lastLeftBumper) {
+            Spindexer.Position.next();
+            Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition());
+        }
+        if (rightBumper && !lastRightBumper) {
+            Spindexer.Position.previous();
+            Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition());
+        }
 
         // ── Drivetrain ────────────────────────────────────────────────────
         Drivetrain.getInstance().drive(
-                -gamepad1.left_stick_y,
-                gamepad1.left_stick_x,
-                gamepad1.right_stick_x
+                -gamepad1.left_stick_x,    // forward/back
+                gamepad1.left_stick_y,    // strafe (negated to fix direction)
+                -gamepad1.right_stick_x    // turn (negated to fix direction)
         );
 
         // ── Periodic ─────────────────────────────────────────────────────
