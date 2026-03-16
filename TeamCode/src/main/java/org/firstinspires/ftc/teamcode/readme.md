@@ -17,26 +17,33 @@ The decision was made to strip NextFTC out entirely and rewrite everything in **
 
 ---
 
-## What Changed — March 14, 2026 Update
+## What Changed — March 16, 2026 Update
 
-### 🏆 Color Matching (Biggest Feature — Previously 6183's Hardest Problem)
+## Teleop.java
+- Removed jam detection and auto-retry logic entirely — forks being reprinted, complexity not worth it
+- Shoot sequence now marks slot EMPTY immediately after flick and advances to next slot — no sensor gating
+- Sensors still run during intake dwell for accurate slot stamping on pickup
+- `squareState` starts at 1 (spin up) on preloaded startup instead of 2, so driver waits for ready rumble before firing
+- Hood manual override added — Cross increments hood by `hoodIncrement` (default 0.05), DPad Right resets to table value
+- Circle now kills everything including flywheel, not just intake
+- Removed `shootVerifySec`, `verifySettleSec`, `jamCheckSec` dashboard variables
+- Simplified `FlickState` back to `IDLE / WAIT_UP / WAIT_DOWN` — no more `JAM_CHECK` or `VERIFY`
 
-The single biggest unsolved problem on 6183 was getting the robot to shoot balls in the correct order matching the field motif pattern. **This is now working.**
+## Turret.java
+- No functional changes
+- `turretOffSet = 250`, `TURRET_MIN / TURRET_MAX` removed from this version (clamping handled by tracking math)
+- `turret.setDirection(REVERSE)` kept from hardware fix session
 
-During `init_loop()`, the Limelight scans the obelisk AprilTag and detects the pattern (GPP / PGP / PPG). The pattern is stored once and locked — since it resets every match, we only need to scan once and the robot remembers the correct shoot order for the entire match. The spindexer now automatically pre-positions to the correct color slot based on the detected pattern before each shot, so balls are fired in the exact order the field expects.
+## Spindexer.java
+- No changes — slot stamping, dwell logic, and color detection unchanged
 
-This was implemented via `MatchPattern.java` which holds the detected pattern and locks it once confirmed. `getTargetColor(step)` and `findColorPosition(color)` in Teleop walk through the pattern sequence and route the spindexer to the right slot every time.
+## TestLimelight.java
+- Removed distance-from-tag display for goal tags (Blue 20, Red 24)
+- Distance is now handled entirely by Pinpoint odometry which tracks reliably
+- Kept raw fiducial debug section and motif pattern detection (GPP/PGP/PPG)
+- Limelight still used for pattern detection only, not ranging
 
-### 🔄 Spindexer Overhaul
-
-- **Fixed slot-stamping bug** — `setColor()` previously always wrote to `currentPosition` instead of the passed-in position, causing wrong slots to be marked empty during shoot sequences
-- **Fixed empty/full flag bug** — `checkSpindexerState()` now properly resets flags at the start of each check instead of letting them get stuck
-- **~25% faster indexing** — servo position tuning and dwell timing improvements
-- **Jam detection and auto-retry** — after each flick, the robot waits `shootVerifySec` then reads the color sensor at that slot. If the ball is still there (jammed), it automatically re-stamps and re-fires. No driver input needed. `shootVerifySec` is tunable on FTC Dashboard (recommended: 0.5–0.6s)
-
-### 🎮 Standardized Controls Across All OpModes
-
-Controls were inconsistent and confusing across Teleop, FullTest, and DataCollection. Full Test and Teleop OpModes now use the same button layout so drivers have identical muscle memory everywhere:
+## Controls for Fulltest and Teleop
 
 | Button | Action |
 |---|---|
@@ -53,17 +60,11 @@ Controls were inconsistent and confusing across Teleop, FullTest, and DataCollec
 | Right Trigger | Nudge aim right (−0.1°) |
 | Left Trigger | Nudge aim left (+0.1°) |
 
-### 🎪 New: Outreach OpMode
+### 🎪 New Opmode Outreach
 
 Added `Outreach.java` — a dedicated OpMode for demos and events. It runs the full robot but is simplified so anyone can drive it without competition context.
 
 Key feature: **full auto-spindexing with dwell logic** built in. The outreach OpMode was actually where the dwell-based auto-indexing logic was first fully figured out — reading color, waiting a confirmed dwell period before stamping the slot, then automatically rotating to the next free position and switching between intake/shoot mode based purely on spindexer sensor state. Once proven here, that same logic was ported into Teleop, FullTest, and DataCollection.
-
-### 🔧 Dwell Logic (Now In All OpModes)
-
-Previously only Teleop had dwell logic — FullTest and DataCollection called periodic() raw every loop tick which caused unreliable color reads. The fix was adding a short confirmed wait before stamping a color into a slot — the sensor reads the color, waits intakeDwellSec (default 0.3s, tunable on dashboard) to confirm it's a real read and not a flicker, then stamps the slot and advances the spindexer. If the spindexer fills up completely it automatically switches to shoot mode, and if there's still free slots it rotates to the next one. All three OpModes now share this exact same behavior.
-
-`intakeDwellSec` is tunable on FTC Dashboard (default: 0.3s).
 
 ---
 
@@ -109,7 +110,7 @@ Previously only Teleop had dwell logic — FullTest and DataCollection called pe
 #### `Limelight.java` (`org.firstinspires.ftc.teamcode.Vision`)
 - Wrapped in try-catch — robot won't crash if Limelight is unplugged
 - Null guards on all methods
-- Tag IDs: BLUE_GOAL=20, RED_GOAL=24, GPP=21, PGP=22, PPG=23
+- Tag IDs: GPP=21, PGP=22, PPG=23
 
 #### `MatchPattern.java` (`org.firstinspires.ftc.teamcode.Utils`)
 - Stores and locks the detected field motif pattern (GPP / PGP / PPG)
@@ -146,12 +147,8 @@ Rewritten from NextFTC command chains to `LinearOpMode` with Pedro Pathing.
 ## TODO — Next update or so..
 
 - [ ] Finish rewriting remaining autonomous OpModes
-- [ ] Re-tune turret — `threshold`, `turretKp`, `turretKd` on FTC Dashboard after hardware changes
 - [ ] Re-tune bilinear interpolator tables from new robot position data
-- [ ] Verify hardware config names: `leftColor`, `rightColor`, `spinServo`, `hood`, `turretEncoder`, `shoot1`, `shoot2`, `turret`
-- [ ] Confirm turret physical stop angles match 180°–360° clamp
 - [ ] Verify starting position coordinates match actual field setup
-- [ ] Rewire robot so the intake isnt eating the turret
 
 ---
 
@@ -179,7 +176,7 @@ No changes made. Used for autonomous path following only.
 
 ## Future Goals
 
-- **Shooting on the move** (Luke's request) — turret already auto-aims every tick, the turret already auto-aims every tick, the remaining work is lead-target compensation: predicting where the goal will be relative to the robot by the time the ball arrives, then offsetting the aim angle and velocity accordingly. Ethan from 10195 got a slight version of this on there robot — the math is based on robot velocity from Pinpoint and known ball flight time.
+- **Shooting on the move** (Luke's request) — turret already auto-aims every tick, the turret already auto-aims every tick, the remaining work is lead-target compensation: predicting where the goal will be relative to the robot by the time the ball arrives, then offsetting the aim angle and velocity accordingly. Ethan from 10195 got a slight version of this on their robot — the math is based on robot velocity from Pinpoint and known ball flight time.
 - Full 12-ball autonomous
 - Red alliance autonomous
 

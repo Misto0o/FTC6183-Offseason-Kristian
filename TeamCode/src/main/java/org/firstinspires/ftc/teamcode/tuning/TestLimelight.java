@@ -31,8 +31,6 @@ public class TestLimelight extends OpMode {
         telemetry.addLine("── GOAL TAGS ────────────────────────────");
         telemetry.addData("Dist Blue (20)",  Limelight.INSTANCE.distanceFromTag(Limelight.BLUE_GOAL_ID));
         telemetry.addData("Dist Red  (24)",  Limelight.INSTANCE.distanceFromTag(Limelight.RED_GOAL_ID));
-        telemetry.addData("Angle Blue (20)", Limelight.INSTANCE.angleFromTag(Limelight.BLUE_GOAL_ID));
-        telemetry.addData("Angle Red  (24)", Limelight.INSTANCE.angleFromTag(Limelight.RED_GOAL_ID));
 
         telemetry.addLine("── MOTIF ────────────────────────────────");
         int pattern = Limelight.INSTANCE.patternFromObelisk();

@@ -93,7 +93,6 @@ public class TestShooter extends OpMode {
         telemetry.addData("Turret Angle Set",             Turret.INSTANCE.getTurretAngleSet());
         telemetry.addData("Turret Power Set",             Turret.INSTANCE.getTurretPowerSet());
         telemetry.addData("Hood Position",                hoodPosition);
-        telemetry.addData("Turret Positions (LL)",        Turret.INSTANCE.headingToTurretPositionLL());
         telemetry.addData("Turret Nonwrapped Angle",      Turret.INSTANCE.getNonWrappedAngleFromEncoder());
         telemetry.addData("Turret Wrapped Angle",         Turret.INSTANCE.getWrappedAngleFromEncoder());
         telemetry.addData("Shooter One Velocity",         Turret.INSTANCE.getVelocity());

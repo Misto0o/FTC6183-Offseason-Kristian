@@ -42,28 +42,11 @@ public class Limelight {
     /** Raw result for debugging — shows every fiducial ID the Limelight currently sees. */
     public LLResult getRawResult() {
         if (limelight == null) return null;
-        limelight.start();
         return limelight.getLatestResult();
-    }
-
-    public double angleFromTag(int tagID) {
-        if (limelight == null) return -1;
-        limelight.start();
-        LLResult latest = limelight.getLatestResult();
-        if (latest == null) return -1;
-        List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();
-        if (r == null || r.isEmpty()) return -1;
-        for (LLResultTypes.FiducialResult fiducial : r) {
-            if (fiducial.getFiducialId() == tagID) {
-                return fiducial.getTargetXDegrees();
-            }
-        }
-        return -1;
     }
 
     public double distanceFromTag(int tagID) {
         if (limelight == null) return 0;
-        limelight.start();
         LLResult latest = limelight.getLatestResult();
         if (latest == null) return 0;
         List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();
@@ -80,7 +63,6 @@ public class Limelight {
 
     public int patternFromObelisk() {
         if (limelight == null) return -1;
-        limelight.start();
         LLResult latest = limelight.getLatestResult();
         if (latest == null) return -1;
         List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();

@@ -105,7 +105,10 @@ public class Spindexer {
         this.leftColorSensor  = leftColorSensor;
         this.rightColorSensor = rightColorSensor;
 
-        spinServo.setPosition(0);
+        // NOTE: intentionally NOT calling spinServo.setPosition() here
+        // so the servo does not move during init — would be a penalty.
+        // setPositionType + setToPosition are called in start() instead.
+
         for (int i = 0; i < ballAtPosition.length; i++) {
             ballAtPosition[i] = DetectedColor.EMPTY;
         }
@@ -194,7 +197,6 @@ public class Spindexer {
      * Reads the color sensors and returns what they currently see.
      * DOES NOT write to ballAtPosition — callers must call setColor() explicitly
      * after confirming the reading (e.g. after a dwell timer).
-     * This prevents false-full on startup and double-counting during fast rotation.
      */
     public DetectedColor readCurrentColor() {
         if (leftColorSensor == null || rightColorSensor == null) return DetectedColor.EMPTY;

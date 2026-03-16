@@ -279,12 +279,6 @@ public class Turret {
     // -------------------------------------------------------------------------
     // Heading helpers
     // -------------------------------------------------------------------------
-    public double headingToTurretPositionLL() {
-        if (a == Aliance.RED)  return Limelight.INSTANCE.angleFromTag(Limelight.RED_GOAL_ID);
-        if (a == Aliance.BLUE) return Limelight.INSTANCE.angleFromTag(Limelight.BLUE_GOAL_ID);
-        return -1;
-    }
-
     public double headingToTurretPositionPinpoint(Aliance aliance) {
         double goalX  = (aliance == Aliance.BLUE) ? BLUE_GOAL_X : RED_GOAL_X;
         double goalY  = (aliance == Aliance.BLUE) ? BLUE_GOAL_Y : RED_GOAL_Y;
