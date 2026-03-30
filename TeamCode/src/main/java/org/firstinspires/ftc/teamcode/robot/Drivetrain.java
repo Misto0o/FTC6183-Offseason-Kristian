@@ -3,8 +3,6 @@ package org.firstinspires.ftc.teamcode.robot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.HardwareMap;
-import com.qualcomm.robotcore.hardware.IMU;
-import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 public class Drivetrain {
 
     private static Drivetrain INSTANCE;
@@ -13,7 +11,6 @@ public class Drivetrain {
     private DcMotorEx backLeftMotor;
     private DcMotorEx frontRightMotor;
     private DcMotorEx backRightMotor;
-    private IMU imu;
 
     private double turnSpeed = 1;
 
@@ -41,28 +38,14 @@ public class Drivetrain {
         backLeftMotor.setDirection(DcMotor.Direction.REVERSE);
         frontRightMotor.setDirection(DcMotor.Direction.FORWARD);
         backRightMotor.setDirection(DcMotor.Direction.REVERSE);
-
-        // Initialize IMU
-        imu = hardwareMap.get(IMU.class, "imu");
-        imu.initialize(new IMU.Parameters(
-                new RevHubOrientationOnRobot(
-                        RevHubOrientationOnRobot.LogoFacingDirection.UP,
-                        RevHubOrientationOnRobot.UsbFacingDirection.FORWARD
-                )
-        ));
     }
     //strafing code
     public void drive(double y, double x, double rx) {
         double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
-        double fl = (x + y + rx) / denominator;  // swapped x and y
-        double bl = (x - y + rx) / denominator;  // swapped x and y
-        double fr = (x - y - rx) / denominator;  // swapped x and y
-        double br = (x + y - rx) / denominator;  // swapped x and y
-
-        frontLeftMotor.setPower(fl * turnSpeed);
-        backLeftMotor.setPower(bl * turnSpeed);
-        frontRightMotor.setPower(fr * turnSpeed);
-        backRightMotor.setPower(br * turnSpeed);
+        frontLeftMotor.setPower((x + y + rx) / denominator);
+        backLeftMotor.setPower((x - y + rx) / denominator);
+        frontRightMotor.setPower((x - y - rx) / denominator);
+        backRightMotor.setPower((x + y - rx) / denominator);
     }
 
     public void setTurnSpeed(double speed) {

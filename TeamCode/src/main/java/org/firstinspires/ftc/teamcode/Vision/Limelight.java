@@ -44,6 +44,20 @@ public class Limelight {
         if (limelight == null) return null;
         return limelight.getLatestResult();
     }
+    // TODO: Pre program the turret angle at TSL
+    public double getTx(int tagID) {
+        if (limelight == null) return 0;
+        LLResult latest = limelight.getLatestResult();
+        if (latest == null) return 0;
+        List<LLResultTypes.FiducialResult> r = latest.getFiducialResults();
+        if (r == null || r.isEmpty()) return 0;
+        for (LLResultTypes.FiducialResult fiducial : r) {
+            if (fiducial.getFiducialId() == tagID) {
+                return fiducial.getTargetXDegrees();
+            }
+        }
+        return 0; // tag not seen
+    }
 
     public double distanceFromTag(int tagID) {
         if (limelight == null) return 0;

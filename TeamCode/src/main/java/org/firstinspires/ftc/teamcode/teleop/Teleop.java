@@ -19,6 +19,8 @@ import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 import org.firstinspires.ftc.teamcode.Vision.Limelight;
 import org.firstinspires.ftc.teamcode.Utils.MatchPattern;
+import org.firstinspires.ftc.teamcode.Vision.DistanceSensor;
+import java.util.Locale;
 
 @Config
 @TeleOp(name = "Teleop", group = "!")
@@ -28,7 +30,10 @@ public class Teleop extends OpMode {
     public static double shootVelocity  = 3000;
     public static double turretAngle    = 123.5;
     public static double intakeDwellSec = 0.3;
-    public static double hoodIncrement  = 0.05;
+    public static  double SHOT_CONFIRM_TIMEOUT = 1.5;
+    public static  double REFIRE_DELAY         = 0.5;
+
+    public static double hoodIncrement = 0.5;
 
     // ── Alliance ──────────────────────────────────────────────────────────────
     private Aliance currentAliance = Aliance.BLUE;
@@ -38,12 +43,18 @@ public class Teleop extends OpMode {
     private boolean turretLock   = false;
     private boolean transferDown = true;
     private boolean intakeOn     = false;
-    private boolean intakeDwellMode = false;
 
     // ── Flywheel state: 0=off  1=spinning up  2=ready ─────────────────────────
     private int     squareState = 0;
     private boolean hasRumbled  = false;
-    private int     patternStep = 0;
+
+    // ── Distance sensor ───────────────────────────────────────────────────────
+    private final DistanceSensor distanceSensor = new DistanceSensor();
+
+    // ── Auto-shoot state machine ──────────────────────────────────────────────
+    private enum AutoShootState { IDLE, CONFIRM_SHOT, WAIT_REFIRE, NEXT_BALL }
+    private AutoShootState autoShootState = AutoShootState.IDLE;
+    private final ElapsedTime autoShootTimer = new ElapsedTime();
 
     // ── Hood manual override ──────────────────────────────────────────────────
     private double hoodOverride = -1;
@@ -60,12 +71,14 @@ public class Teleop extends OpMode {
     // ── Button edge detection ─────────────────────────────────────────────────
     private boolean lastCircle, lastCross, lastSquare, lastTriangle;
     private boolean lastLeftBumper, lastRightBumper;
+    private boolean lastLeftTrigger, lastRightTrigger;
     private boolean lastDpadUp, lastDpadDown, lastDpadLeft, lastDpadRight;
 
     @Override
     public void init() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
         Drivetrain.getInstance().init(hardwareMap);
+        distanceSensor.init(hardwareMap);
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
                 hardwareMap.servo.get("spinServo"),
@@ -73,6 +86,7 @@ public class Teleop extends OpMode {
                 hardwareMap.get(com.qualcomm.robotcore.hardware.NormalizedColorSensor.class, "rightColorSensor")
         );
         Transfer.INSTANCE.initialize(hardwareMap);
+        Transfer.INSTANCE.transferDown();
         Turret.INSTANCE.initialize(hardwareMap);
         Pinpoint.INSTANCE.init(hardwareMap);
         Limelight.INSTANCE.initialize(hardwareMap);
@@ -91,11 +105,13 @@ public class Teleop extends OpMode {
         telemetry.addLine("DPad UP = Blue  |  DPad DOWN = Red");
         telemetry.addData("Alliance", currentAliance);
         telemetry.addData("Pattern",  MatchPattern.getPattern());
+        telemetry.addData("Sensor found", hardwareMap.analogInput.contains("distanceSensor") ? "YES" : "NO - CHECK CONFIG NAME");
         telemetry.update();
     }
 
     @Override
     public void start() {
+        MatchPattern.reset();
         Turret.INSTANCE.setToAngle(turretAngle);
         if (currentAliance == Aliance.BLUE) {
             Pinpoint.INSTANCE.updatePosition(
@@ -105,7 +121,7 @@ public class Teleop extends OpMode {
                     new Pose2D(DistanceUnit.INCH, 8.5, 9, AngleUnit.DEGREES, 180));
         }
 
-        // Scan all slots — same as Outreach dwell pattern
+        // Scan all slots
         for (int i = 0; i < Spindexer.Position.values().length; i++) {
             Spindexer.Position pos = Spindexer.Position.values()[i];
             Spindexer.INSTANCE.setToPosition(pos);
@@ -115,17 +131,16 @@ public class Teleop extends OpMode {
         Spindexer.INSTANCE.periodic();
 
         if (Spindexer.INSTANCE.getFull()) {
-            // Full — go to shoot, start revving, squareState=1 so driver waits for rumble
-            shootMode   = true;
-            squareState = 1;
-            hasRumbled  = false;
-            Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
-            int filled = Spindexer.INSTANCE.filledPosition();
-            if (filled != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[filled]);
-        } else {
-            shootMode       = false;
+            shootMode       = true;
             intakeOn        = false;
-            intakeDwellMode = false;
+            squareState     = 1;
+            hasRumbled      = false;
+            Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+            int next = nextShootPosition();
+            if (next != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
+        } else {
+            shootMode   = false;
+            intakeOn    = false;
             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
             int free = Spindexer.INSTANCE.freePosition();
             if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
@@ -153,11 +168,9 @@ public class Teleop extends OpMode {
         if (triangle && !lastTriangle) {
             if (!intakeOn) {
                 intakeOn        = true;
-                intakeDwellMode = false;
                 shootMode       = false;
                 squareState     = 0;
                 hasRumbled      = false;
-                patternStep     = 0;
                 dwelling        = false;
                 hoodOverride    = -1;
                 Turret.INSTANCE.setVelocity(0);
@@ -167,9 +180,24 @@ public class Teleop extends OpMode {
                 int free = Spindexer.INSTANCE.freePosition();
                 if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
             } else {
-                // Second press: toggle dwell mode (re-run for false-full fix)
-                intakeDwellMode = !intakeDwellMode;
-                dwelling        = false;
+                // Second press — re-scan all slots to fix misreads
+                Intake.INSTANCE.idle();
+                Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+                for (int i = 0; i < Spindexer.Position.values().length; i++) {
+                    Spindexer.Position pos = Spindexer.Position.values()[i];
+                    Spindexer.INSTANCE.setToPosition(pos);
+                    try { Thread.sleep(400); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    Spindexer.INSTANCE.setColor(pos, Spindexer.INSTANCE.readCurrentColor());
+                }
+                Spindexer.INSTANCE.periodic();
+                // Find first empty slot and resume intake there
+                int free = Spindexer.INSTANCE.freePosition();
+                if (free != -1) {
+                    intakeOn = true;
+                    Intake.INSTANCE.on();
+                    Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
+                }
+                dwelling = false;
                 dwellTimer.reset();
             }
         }
@@ -177,26 +205,38 @@ public class Teleop extends OpMode {
         // ── Circle: kill everything ───────────────────────────────────────────
         if (circle && !lastCircle) {
             intakeOn        = false;
-            intakeDwellMode = false;
             dwelling        = false;
             shootMode       = false;
             squareState     = 0;
             hasRumbled      = false;
-            patternStep     = 0;
             flickState      = FlickState.IDLE;
             transferDown    = true;
             hoodOverride    = -1;
+            autoShootState  = AutoShootState.IDLE;
             Intake.INSTANCE.idle();
             Turret.INSTANCE.setVelocity(0);
             Transfer.INSTANCE.transferDown();
             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
         }
 
-        // ── Cross: hood increment ─────────────────────────────────────────────
+        // ── Cross: start auto-shoot-all / hood increment ──────────────────────
         if (cross && !lastCross) {
-            if (hoodOverride < 0) hoodOverride = Turret.INSTANCE.getPosition();
-            hoodOverride += hoodIncrement;
-            if (hoodOverride > 1.0) hoodOverride = -1;
+            if (shootMode && squareState == 2 && autoShootState == AutoShootState.IDLE) {
+                autoShootState = AutoShootState.CONFIRM_SHOT;
+                autoShootTimer.reset();
+                if (flickState == FlickState.IDLE && transferDown) {
+                    transferDown = false;
+                    Transfer.INSTANCE.transferUp();
+                    flickTimer.reset();
+                    flickState  = FlickState.WAIT_UP;
+                    squareState = 1;
+                    hasRumbled  = false;
+                }
+            } else {
+                if (hoodOverride < 0) hoodOverride = Turret.INSTANCE.getPosition();
+                hoodOverride += hoodIncrement;
+                if (hoodOverride > 1.0) hoodOverride = -1;
+            }
         }
 
         // ── Square: flywheel cycle ────────────────────────────────────────────
@@ -205,7 +245,6 @@ public class Teleop extends OpMode {
                 case 0:
                     squareState = 1;
                     hasRumbled  = false;
-                    patternStep = 0;
                     break;
                 case 2:
                     if (flickState == FlickState.IDLE && transferDown) {
@@ -222,20 +261,58 @@ public class Teleop extends OpMode {
                     Turret.INSTANCE.setVelocity(0);
                     squareState = 0;
                     hasRumbled  = false;
-                    patternStep = 0;
                     break;
             }
         }
-
-        if (dpadUp    && !lastDpadUp)    turretLock = !turretLock;
+        if (dpadUp && !lastDpadUp) {
+            // Reset odometry to corner + zero turret offset
+            if (currentAliance == Aliance.BLUE) {
+                Pinpoint.INSTANCE.updatePosition(
+                        new Pose2D(DistanceUnit.INCH, 144 - 8.5, 9, AngleUnit.DEGREES, 0));
+            } else {
+                Pinpoint.INSTANCE.updatePosition(
+                        new Pose2D(DistanceUnit.INCH, 8.5, 9, AngleUnit.DEGREES, 180));
+            }
+            Turret.INSTANCE.zeroAngleOffset();
+        }
         if (dpadDown  && !lastDpadDown)  Turret.INSTANCE.zeroAngleOffset();
-        if (dpadLeft  && !lastDpadLeft) {
+        if (dpadLeft && !lastDpadLeft) {
+            // Force intake mode
+            shootMode      = false;
+            intakeOn       = true;
+            squareState    = 0;
+            hasRumbled     = false;
+            hoodOverride   = -1;
+            autoShootState = AutoShootState.IDLE;
+            flickState     = FlickState.IDLE;
+            Turret.INSTANCE.setVelocity(0);
+            Turret.INSTANCE.setToAngle(turretAngle);
+            Intake.INSTANCE.on();
+            Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+            int free = Spindexer.INSTANCE.freePosition();
+            if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
+        }
+        if (dpadRight && !lastDpadRight) {
+            // Force shoot mode
+            shootMode      = true;
+            intakeOn       = false;
+            squareState    = 1;
+            hasRumbled     = false;
+            hoodOverride   = -1;
+            autoShootState = AutoShootState.IDLE;
+            flickState     = FlickState.IDLE;
+            Intake.INSTANCE.idle();
+            Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+            int next = nextShootPosition();
+            if (next != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
+        }
+        if (leftTrigger && !lastLeftTrigger) {  // hold to reverse intake
             if (intakeOn) Intake.INSTANCE.reverse();
             else          Intake.INSTANCE.idle();
         }
-        if (dpadRight && !lastDpadRight) hoodOverride = -1;
-        if (rightTrigger) Turret.INSTANCE.updateAngleOffset(-0.1);
-        if (leftTrigger)  Turret.INSTANCE.updateAngleOffset(0.1);
+        if (rightTrigger && !lastRightTrigger) {  // toggle turret lock
+            turretLock = !turretLock;
+        }
 
         if (leftBumper  && !lastLeftBumper) {
             Spindexer.Position.next();
@@ -258,59 +335,86 @@ public class Teleop extends OpMode {
 
             case WAIT_DOWN:
                 if (flickTimer.seconds() >= 0.5) {
-                    // Swing to intake pos, read sensor, stamp whatever we see
                     int shotSlot = Spindexer.INSTANCE.getPosition().ordinal();
                     Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
                     Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[shotSlot]);
-                    // Small settle then read — reuse flickTimer for another 0.3s
                     flickTimer.reset();
-                    flickState = FlickState.IDLE; // handled below after settle
+                    flickState   = FlickState.IDLE;
                     transferDown = true;
 
-                    // Stamp what sensors see after brief settle inline with next loop ticks
-                    // We use a simple approach: mark empty now, sensors will correct on next intake dwell
+                    // Mark the shot slot empty
                     Spindexer.INSTANCE.setColor(
                             Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY);
                     Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
-
-                    // Advance pattern step
-                    if (shootMode && MatchPattern.isLocked()) {
-                        patternStep = (patternStep + 1) % 3;
-                    }
                     Spindexer.INSTANCE.periodic();
 
                     if (Spindexer.INSTANCE.getEmpty()) {
-                        shootMode   = false;
-                        squareState = 0;
-                        patternStep = 0;
+                        shootMode      = false;
+                        squareState    = 0;
+                        autoShootState = AutoShootState.IDLE;
                         Turret.INSTANCE.setVelocity(0);
                         Turret.INSTANCE.setToAngle(turretAngle);
                         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
                         int free = Spindexer.INSTANCE.freePosition();
                         if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
                     } else {
-                        int targetPos = -1;
-                        for (int offset = 0; offset < 3; offset++) {
-                            int step = (patternStep + offset) % 3;
-                            Spindexer.DetectedColor c = getTargetColor(step);
-                            int pos = findColorPosition(c);
-                            if (pos != -1
-                                    && Spindexer.INSTANCE.getBallAtPosition()[pos] != Spindexer.DetectedColor.EMPTY) {
-                                targetPos   = pos;
-                                patternStep = step;
-                                break;
-                            }
-                        }
-                        if (targetPos != -1) {
-                            Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[targetPos]);
-                        } else {
-                            int filled = Spindexer.INSTANCE.filledPosition();
-                            if (filled != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[filled]);
-                        }
+                        int next = nextShootPosition();
+                        if (next != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
                     }
                 }
                 break;
 
+            default:
+                break;
+        }
+
+        // ── AUTO-SHOOT state machine ──────────────────────────────────────────
+        switch (autoShootState) {
+
+            case CONFIRM_SHOT:
+                if (flickState != FlickState.IDLE) break;
+
+                if (distanceSensor.isClear()) {
+                    autoShootState = AutoShootState.NEXT_BALL;
+                } else if (autoShootTimer.seconds() > SHOT_CONFIRM_TIMEOUT) {
+                    autoShootTimer.reset();
+                    autoShootState = AutoShootState.WAIT_REFIRE;
+                }
+                break;
+
+            case WAIT_REFIRE:
+                if (autoShootTimer.seconds() >= REFIRE_DELAY) {
+                    if (squareState == 2 && flickState == FlickState.IDLE && transferDown) {
+                        transferDown   = false;
+                        Transfer.INSTANCE.transferUp();
+                        flickTimer.reset();
+                        flickState     = FlickState.WAIT_UP;
+                        squareState    = 1;
+                        hasRumbled     = false;
+                        autoShootTimer.reset();
+                        autoShootState = AutoShootState.CONFIRM_SHOT;
+                    }
+                }
+                break;
+
+            case NEXT_BALL:
+                if (Spindexer.INSTANCE.getEmpty()) {
+                    autoShootState = AutoShootState.IDLE;
+                    break;
+                }
+                if (squareState == 2 && flickState == FlickState.IDLE && transferDown) {
+                    transferDown   = false;
+                    Transfer.INSTANCE.transferUp();
+                    flickTimer.reset();
+                    flickState     = FlickState.WAIT_UP;
+                    squareState    = 1;
+                    hasRumbled     = false;
+                    autoShootTimer.reset();
+                    autoShootState = AutoShootState.CONFIRM_SHOT;
+                }
+                break;
+
+            case IDLE:
             default:
                 break;
         }
@@ -320,7 +424,7 @@ public class Teleop extends OpMode {
                 gamepad1.left_stick_y,
                 -gamepad1.right_stick_x);
 
-        // ── INTAKE LOGIC — straight from Outreach, no changes ─────────────────
+        // ── INTAKE LOGIC ──────────────────────────────────────────────────────
         if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE
                 && flickState == FlickState.IDLE) {
             if (intakeOn) {
@@ -333,16 +437,13 @@ public class Teleop extends OpMode {
                     dwelling = false;
                     Spindexer.INSTANCE.periodic();
                     if (Spindexer.INSTANCE.getFull()) {
-                        // Full — switch to shoot, start revving
                         shootMode       = true;
                         intakeOn        = false;
-                        intakeDwellMode = false;
-                        Intake.INSTANCE.idle();
                         squareState = 1;
                         hasRumbled  = false;
                         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
-                        int filled = Spindexer.INSTANCE.filledPosition();
-                        if (filled != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[filled]);
+                        int next = nextShootPosition();
+                        if (next != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
                     } else {
                         int free = Spindexer.INSTANCE.freePosition();
                         if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
@@ -354,35 +455,17 @@ public class Teleop extends OpMode {
 
         } else if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.SHOOT
                 && flickState == FlickState.IDLE) {
-            // In shoot mode and not mid-flick — position to next target
             if (Spindexer.INSTANCE.getEmpty()) {
                 shootMode   = false;
                 squareState = 0;
-                patternStep = 0;
                 Turret.INSTANCE.setVelocity(0);
                 Turret.INSTANCE.setToAngle(turretAngle);
                 Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
                 int free = Spindexer.INSTANCE.freePosition();
                 if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
             } else {
-                int targetPos = -1;
-                for (int offset = 0; offset < 3; offset++) {
-                    int step = (patternStep + offset) % 3;
-                    Spindexer.DetectedColor c = getTargetColor(step);
-                    int pos = findColorPosition(c);
-                    if (pos != -1
-                            && Spindexer.INSTANCE.getBallAtPosition()[pos] != Spindexer.DetectedColor.EMPTY) {
-                        targetPos   = pos;
-                        patternStep = step;
-                        break;
-                    }
-                }
-                if (targetPos != -1) {
-                    Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[targetPos]);
-                } else {
-                    int filled = Spindexer.INSTANCE.filledPosition();
-                    if (filled != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[filled]);
-                }
+                int next = nextShootPosition();
+                if (next != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
             }
         }
 
@@ -409,8 +492,12 @@ public class Teleop extends OpMode {
         }
         if (hoodOverride >= 0) targetHood = hoodOverride;
 
-        if (!shootMode || turretLock) Turret.INSTANCE.setToAngle(turretAngle);
-        else                          Turret.INSTANCE.followGoalOdometryPositional(currentAliance);
+        if (!shootMode || turretLock) {
+            Turret.INSTANCE.setToAngle(turretAngle);
+            Turret.INSTANCE.resetFineTune();
+        } else {
+            Turret.INSTANCE.aimAtGoal(currentAliance, goalId);
+        }
 
         if (squareState > 0) Turret.INSTANCE.setVelocity(targetVelocity);
         else                  Turret.INSTANCE.setVelocity(0);
@@ -440,16 +527,18 @@ public class Teleop extends OpMode {
         telemetry.addData("Pattern",  MatchPattern.getPattern()
                 + (MatchPattern.isLocked() ? " (LOCKED)" : " (searching...)"));
         telemetry.addData("Mode",     shootMode ? "SHOOT" : "INTAKE");
-        telemetry.addData("Intake",   !intakeOn ? "OFF" : intakeDwellMode ? "ON (DWELL)" : "ON");
 
         telemetry.addLine("── FLYWHEEL ─────────────────────────────");
         telemetry.addData("Flywheel",
                 squareState == 0 ? "OFF" :
                         squareState == 1 ? "SPINNING UP..." : "READY - Press Square");
-        telemetry.addData("Velocity (actual)",    (int) Turret.INSTANCE.getVelocity());
-        telemetry.addData("Velocity (target)",    (int) targetVelocity);
-        telemetry.addData("Next Expected",        MatchPattern.isLocked()
-                ? String.valueOf(getTargetColor(patternStep)) : "ANY");
+        telemetry.addData("Velocity (actual)", (int) Turret.INSTANCE.getVelocity());
+        telemetry.addData("Velocity (target)", (int) targetVelocity);
+        telemetry.addData("Next Shot",         nextShootPosition() != -1
+                ? Spindexer.INSTANCE.getBallAtPosition()[nextShootPosition()] : "NONE");
+        telemetry.addData("Auto-Shoot",        autoShootState);
+        telemetry.addData("Distance (cm)",     String.format(Locale.US, "%.1f", distanceSensor.getDistanceCM()));
+        telemetry.addData("Ball at shooter",   distanceSensor.isBallPresent() ? "YES" : "no");
 
         telemetry.addLine("── TURRET ───────────────────────────────");
         telemetry.addData("Turret Lock",   turretLock ? "FORCED" : shootMode ? "TRACKING" : "LOCKED");
@@ -463,6 +552,9 @@ public class Teleop extends OpMode {
         telemetry.addData("Ball Pos 1",       Spindexer.INSTANCE.getBallAtPosition()[0]);
         telemetry.addData("Ball Pos 2",       Spindexer.INSTANCE.getBallAtPosition()[1]);
         telemetry.addData("Ball Pos 3",       Spindexer.INSTANCE.getBallAtPosition()[2]);
+        telemetry.addData("Pattern locked", MatchPattern.isLocked());
+        telemetry.addData("Pattern value",  MatchPattern.getPattern());
+        telemetry.addData("nextShoot idx",  nextShootPosition());
         telemetry.addData("Current Position", Spindexer.INSTANCE.getPosition());
 
         telemetry.update();
@@ -477,25 +569,40 @@ public class Teleop extends OpMode {
         lastDpadDown    = dpadDown;
         lastDpadLeft    = dpadLeft;
         lastDpadRight   = dpadRight;
+        lastLeftTrigger  = leftTrigger;
+        lastRightTrigger = rightTrigger;
     }
 
-    private Spindexer.DetectedColor getTargetColor(int step) {
-        if (!MatchPattern.isLocked()) return null;
-        step = step % 3;
-        switch (MatchPattern.getPattern()) {
-            case GPP: return step == 0 ? Spindexer.DetectedColor.GREEN  : Spindexer.DetectedColor.PURPLE;
-            case PGP: return step == 1 ? Spindexer.DetectedColor.GREEN  : Spindexer.DetectedColor.PURPLE;
-            case PPG: return step == 2 ? Spindexer.DetectedColor.GREEN  : Spindexer.DetectedColor.PURPLE;
-            default:  return null;
-        }
-    }
-
-    private int findColorPosition(Spindexer.DetectedColor target) {
-        if (target == null || target == Spindexer.DetectedColor.EMPTY) return -1;
+    /**
+     * Returns the slot index to shoot next based on stored ball colors.
+     * If pattern is locked: GREEN first for GPP, PURPLE first for PGP/PPG.
+     * If pattern unknown: just returns the first filled slot.
+     */
+    private int nextShootPosition() {
         Spindexer.DetectedColor[] slots = Spindexer.INSTANCE.getBallAtPosition();
-        for (int i = 0; i < slots.length; i++) {
-            if (slots[i] == target) return i;
+
+        Spindexer.DetectedColor priority = null;
+        if (MatchPattern.isLocked()) {
+            switch (MatchPattern.getPattern()) {
+                case GPP: priority = Spindexer.DetectedColor.GREEN;  break;
+                case PGP: // fall through
+                case PPG: priority = Spindexer.DetectedColor.PURPLE; break;
+                default:  priority = null;
+            }
         }
+
+        // First pass: find priority color
+        if (priority != null) {
+            for (int i = 0; i < slots.length; i++) {
+                if (slots[i] == priority) return i;
+            }
+        }
+
+        // Second pass: any filled slot
+        for (int i = 0; i < slots.length; i++) {
+            if (slots[i] != Spindexer.DetectedColor.EMPTY) return i;
+        }
+
         return -1;
     }
 
