@@ -16,7 +16,7 @@ import org.firstinspires.ftc.teamcode.Vision.Limelight;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 
 @Config
-@TeleOp(name = "FullTest")
+@TeleOp(name = "FullTest", group = "FullSystem")
 public class FullTest extends OpMode {
 
     // ── Dashboard-tunable ─────────────────────────────────────────────────────
@@ -171,10 +171,12 @@ public class FullTest extends OpMode {
                 break;
         }
 
+        // ── Drivetrain ────────────────────────────────────────────────────────
         Drivetrain.getInstance().drive(
-                -gamepad1.left_stick_x,
-                gamepad1.left_stick_y,
-                -gamepad1.right_stick_x);
+                -gamepad1.left_stick_y,
+                gamepad1.left_stick_x,
+                gamepad1.right_stick_x * Drivetrain.getInstance().getTurnSpeed()
+        );
 
         // ── Intake dwell logic ────────────────────────────────────────────────
         if (Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE) {

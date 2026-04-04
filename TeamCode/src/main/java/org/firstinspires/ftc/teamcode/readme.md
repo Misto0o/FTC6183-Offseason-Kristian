@@ -5,6 +5,14 @@ Over the course of this offseason, the entire codebase was rebuilt from the grou
 
 ---
 
+## TL;DR Welcome!
+- Full robot codebase rewritten from NextFTC → FTC SDK
+- Two-stage turret aiming (Odometry + Limelight)
+- Modular subsystem architecture with tuning OpModes
+- Built for reliability, readability, and team scalability
+
+---
+
 ## Why We Rewrote Everything
 
 Our previous lead programmer (Cheick) built the original codebase on top of **NextFTC**, a third-party command-based framework. While the logic underneath was solid, the framework was causing real problems:
@@ -17,8 +25,8 @@ The decision was made to strip NextFTC out entirely and rewrite everything in **
 
 ---
 
-## What Changed — March 30, 2026 Update
-## Turret Aiming — How It Works:
+## What Changed — April 4th, 2026 Update
+### Turret Aiming — How It Works:
 
 The turret uses a two-stage aiming system to lock onto the goal.
 
@@ -28,55 +36,44 @@ As soon as shoot mode is active, `followGoalOdometryPositional()` runs every loo
 **Stage 2 — Fine tune (Limelight tx)**
 Once the turret angle error drops below `fineTuneThresholdDeg` (default 5°), `fineTuneActive` flips to true and the Limelight turns on. From here, `getTx()` reads the horizontal offset in degrees between the camera crosshair and the goal AprilTag. If the tag is visible and the offset is larger than `fineTuneBangBangDeg` (default 0.5°), it nudges `angleOffset` by `fineTuneNudge` in the correct direction each tick. This offset carries forward into `followGoalOdometryPositional()` so the two stages stay in sync. If the tag disappears mid-match, it falls back to pure odometry automatically.
 
-**Why not just use Limelight the whole time?**
-The Limelight's field of view is narrow. Relying on it from the start means if the turret starts far off angle the tag won't even be in frame. Odometry gets it close enough first, then Limelight takes over for the final correction.
-
 **Turret lock override**
 Right Trigger toggles `turretLock`, which bypasses both stages entirely and holds the turret at the fixed `turretAngle` park position. Useful if tracking is fighting the driver or the tag is being blocked.
 
-## New Controls:
-**DPad Left / DPad Right** now force mode switches regardless of current state.
-- **DPad Left** — force intake mode: kills flywheel, turns intake on, resets spindexer to first free slot
-- **DPad Right** — force shoot mode: stops intake, spins flywheel up to state 1, moves spindexer to next ball to shoot
-Both reset `autoShootState` and `flickState` to IDLE so you're never left mid-sequence after a forced switch.
-Previously both DPad Left and Right just reset `hoodOverride` to -1. That behavior is gone.
-- **DPad Up** — reset odometry + zero turret offset
-- **DPad Down** — zero turret angle offset
-- **Left Trigger** — reverse intake (if intake is on)
-- **Right Trigger** — toggle turret lock
-- **More Code cleanups re added auto stamping on pickup from *outreach.java*,**
+**SimpleAuto**
+Created a simple auto for testing pathing will be a 9 ball auto if everything works perfectly.
 
-## Turret.java
-- No functional changes
-- Removed Bilinear Lookup Tables from **Turet.java**, and made a new Ultil Opmode Called **"ShooterTables.java"**
+**Fixed Drive Train**
+DriveTrain now has perfect driving and is 100% faster with better logic and math.
 
-## Spindexer.java
-- No changes — slot stamping, dwell logic, and color detection unchanged
+### New Controls & Logic:
+- **Triangle**: Toggles intake on/off. Second press triggers a non-blocking **Spindexer Rescan** to update ball occupancy data.
+- **Circle**: Emergency Reset — kills all mechanisms and resets state machines to IDLE.
+- **Cross**: Triggers **Auto-Shoot All** sequence if flywheel is ready; otherwise increments `hoodOverride`.
+- **Square**: Cycles Flywheel states: OFF -> SPINNING UP (Rumbles when ready) -> READY.
+- **DPad Left / DPad Right**: Force mode switches regardless of current state.
+    - **DPad Left** — force intake mode: kills flywheel, turns intake on, resets spindexer to first free slot.
+    - **DPad Right** — force shoot mode: stops intake, spins flywheel up to state 1, moves spindexer to next ball to shoot.
+- **DPad Up**: Reset odometry to corner + zero turret offset.
+- **DPad Down**: Zero turret angle offset.
+- **Left Trigger**: Reverse intake (if intake is on).
+- **Right Trigger**: Toggle turret lock.
+- **Bumpers**: Manual Spindexer rotation (Next/Previous).
+- **Match Pattern Detection**: Added `MatchPattern.java` to detect and lock field motifs (GPP/PGP/PPG) during init for color-matched shooting order.
 
-## DistanceSensor.java
+---
 
-Wraps the REV 2m distance sensor mounted at the shooter exit to detect whether a ball is sitting in the shooter or has already left.
-
-**Hardware name:** `distanceSensor`
-
-**How it works:** reads distance in cm every time it's called. If the reading falls between `BALL_MIN_CM` and `BALL_MAX_CM`, a ball is considered present. Anything outside that range (too close or too far) is considered clear.
-
-- `isBallPresent()` — true when a ball is detected in the shooter
-- `isClear()` — inverse; used by the auto-shoot state machine to confirm a ball has left before advancing to the next one
-- `getDistanceCM()` — raw distance reading; returns 999 if the sensor failed to initialize
-
-`BALL_MIN_CM` (default 3.0) and `BALL_MAX_CM` (default 15.0) are tunable live on FTC Dashboard.
-
-## Controls and Drivestation Confgiuration Links
+## Controls, DriverStation, And Lookup Tables Links
 
 [Controls Reference Link](https://docs.google.com/document/d/1A3iNGGY-CFJ41gOVWxeUdjWmHU4-4ooo/edit?usp=sharing&ouid=105244545883819724199&rtpof=true&sd=true)
 
 [DriveStation Configs](https://docs.google.com/document/d/1f5MVQA72TZ1hu_ieV58IywkEtbo__3kph1g5qZGos4g/edit?usp=sharing)
 
+[ShooterTable Spreadsheet](https://docs.google.com/spreadsheets/d/1oTGg8vLRNqRh52t9FsZwadkLCS6sTmQx/edit?usp=sharing&ouid=110208191089846695150&rtpof=true&sd=true)
+
 # Removed ALL Autos..
 **Why?** 
 **I noticed that the old autos from Cheicks code was flawed and dated and I want to create my owns instead of stealing his code**
-- I will more than likley create autos once all teleops are finished and the bot works really well
+- Created a new **SimpleAuto.java** that just runs a simple 9 ball auto path
 
 ---
 
@@ -85,7 +82,7 @@ Wraps the REV 2m distance sensor mounted at the shooter exit to detect whether a
 #### `Drivetrain.java`
 - Plain mecanum drive, `getInstance()` singleton
 - `drive(y, x, rx)` — raw mecanum math
-- Brake mode on all motors, fl/fr reversed to match hardware
+- Brake mode on all motors, **backLeft** reversed to match hardware
 
 #### `Intake.java`
 - `on()`, `idle()`, `reverse()` — plain void methods
@@ -100,12 +97,12 @@ Wraps the REV 2m distance sensor mounted at the shooter exit to detect whether a
 #### `Transfer.java`
 - Two servos (`leftFork`, `rightFork`) for ball transfer mechanism
 - `transferUp()` / `transferDown()` — plain void
-- Servo positions: leftUp=1, leftDown=0, rightUp=0, rightDown=1
+- Servo positions: leftUp=0.8, leftDown=0, rightUp=0.2, rightDown=1
 
 #### `Spindexer.java`
 - Three-position ball indexer with two NormalizedColorSensors
 - Hardware: `spinServo`, `leftColorSensor`, `rightColorSensor`
-- Servo positions: (needs to be updated)
+- **Servo positions**: Intake (0.22, 0.51, 0.8) and Shoot (0.665, 0.08, 0.37)
 - Color detection via HSV thresholds, tunable on FTC Dashboard
 - Both slot-stamping and empty/full flag bugs fixed 
 
@@ -127,8 +124,8 @@ Wraps the REV 2m distance sensor mounted at the shooter exit to detect whether a
 - getTx(tagId), distanceFromTag(tagId), patternFromObelisk() — all return safe defaults on null/missing
 - Tag IDs: BLUEGOAL=20, GPP=21, PGP=22, PPG=23, REDGOAL=24
 
-#### `distanceSensor.java`
-- Wraps REV 2m distance sensor
+#### `DistanceSensor.java` (`org.firstinspires.ftc.teamcode.Vision`)
+- Wraps REV 2m distance sensor mounted at the shooter exit
 - isBallPresent() / isClear() — checks distance against tunable BALL_MIN_CM / BALL_MAX_CM window
 - Returns 999cm on null sensor (safe default, never falsely triggers ball-present)
 
@@ -149,6 +146,119 @@ Wraps the REV 2m distance sensor mounted at the shooter exit to detect whether a
 - Points sourced from field testing — mirror red/blue across the 144" centerline
 
 ---
+## System Flow (TeleOp) 🔄
+
+This robot operates as a **loop-driven, state-based system**.  
+Each cycle of the loop reads inputs, updates internal state, and drives all subsystems accordingly.
+
+---
+
+### 🟢 Initialization Phase (`init` + `init_loop`)
+
+On init:
+- All subsystems and sensors are initialized (Drivetrain, Intake, Spindexer, Transfer, Turret, Pinpoint, Limelight, Distance Sensor)
+- Transfer defaults to a safe position
+- Match pattern detection is reset
+
+During `init_loop`:
+- Alliance is selected
+- Field pattern (GPP / PGP / PPG) is detected and locked
+- Sensor status is verified
+
+This ensures the robot starts the match with correct configuration and field awareness.
+
+---
+
+### 🔄 Main Control Loop (Runs Every Tick)
+
+Each loop cycle follows the same high-level flow: Driver Intent → State Updates → Subsystem Logic → Sensor Feedback → System Adjustments
+
+
+---
+
+### 🧠 State-Based Architecture
+
+The robot does not directly map inputs to hardware.  
+Instead, it maintains internal **states** such as:
+
+- Intake active / inactive
+- Shoot mode vs intake mode
+- Flywheel state (off, spin-up, ready)
+- Auto-shoot sequence state
+- Transfer (flick) state
+- Spindexer slot occupancy
+
+These states are updated continuously and drive all behavior.
+
+---
+
+### ⚙️ Subsystem Coordination
+
+All subsystems operate together based on current state:
+
+- **Intake System**
+    - Detects and confirms ball color using dwell timing
+    - Assigns balls to spindexer slots
+    - Tracks intake order
+
+- **Spindexer**
+    - Maintains internal model of ball positions
+    - Rotates automatically to correct slot for intake or shooting
+    - Handles full / empty transitions
+
+- **Transfer (Flicker)**
+    - Executes timed feed cycles into the shooter
+    - Updates slot state after each shot
+
+- **Turret + Shooter**
+    - Continuously calculates target velocity and hood angle
+    - Uses odometry and/or vision for distance estimation
+    - Maintains aim using two-stage targeting (coarse + fine)
+
+---
+
+### 🎯 Targeting & Feedback Loop
+
+Every tick:
+- Robot position is updated via **Pinpoint**
+- Vision data (Limelight) is used if available
+- Shooter velocity + hood position are recalculated from lookup tables
+- Turret adjusts toward goal in real time
+
+This creates a continuous **feedback loop** for accurate shooting.
+
+---
+
+### 🔁 Automatic Behavior
+
+The system handles transitions without driver intervention:
+
+- Intake fills spindexer → automatically switches to shoot mode
+- Shooting sequence continues until all balls are fired
+- Once empty → system returns to intake mode
+
+If vision is lost:
+- System falls back to odometry-based targeting
+
+---
+
+### 🚗 Drivetrain
+
+- Runs independently each loop using mecanum drive math
+- Always responsive to driver input
+
+---
+
+### 🤖 Design Philosophy
+
+- Loop-based, non-blocking architecture
+- State machines control all sequencing
+- Sensors continuously refine behavior
+- Driver provides intent, system handles execution
+
+The goal is a robot that is **consistent, predictable, and minimally dependent on driver micromanagement**.
+
+---
 
 ## OpModes
 
@@ -165,7 +275,7 @@ Full competition driver-controlled period. Alliance hardcoded Blue (Red support 
 - **`TestSpindexer.java`** — Spindexer position and color sensor tuning
 - **`TestLimelight.java`** — AprilTag detection and distance testing
 - **`TestHood.java`** — Hood servo position tuning
-- **`TestDriveTrain.java`** - Simple Mechnuam DriveTrain test to make sure wheels are working
+- **`TestDriveTrain.java`** - Simple Mecanum DriveTrain test to make sure wheels are working
 
 ### Autonomous (`org.firstinspires.ftc.teamcode.Auto`)
 
@@ -201,16 +311,46 @@ No changes made. Used for autonomous path following only.
 - **`MatchPattern.java`** — Pattern detection, locking, and reset logic
 - **`Interpolator.java`** — 2D bilinear interpolation with nearest-neighbor fallback
 - **`SensorColor.java`** — HSV calibration OpMode for color sensor tuning, not used in match code
-- **`Aliance.java`** - Simple aliance picker enum
 - **`ShooterTables.java`** - Static table picker for Bilinear Lookup Table
-- **'SensorColor.java'** - Currently unused may be used for better HSV color picking for spindexer.java
 ---
 
 ## Future Goals
 
-- **Shooting on the move** (Luke's request) — turret already auto-aims every tick, the turret already auto-aims every tick, the remaining work is lead-target compensation: predicting where the goal will be relative to the robot by the time the ball arrives, then offsetting the aim angle and velocity accordingly. Ethan from 10195 got a slight version of this on their robot — the math is based on robot velocity from Pinpoint and known ball flight time.
+- **Shooting on the move** (Luke's request) — turret already auto-aims every tick, the remaining work is lead-target compensation: predicting where the goal will be relative to the robot by the time the ball arrives, then offsetting the aim angle and velocity accordingly. Ethan from 10195 got a slight version of this on their robot — the math is based on robot velocity from Pinpoint and known ball flight time.
 - Full 12-ball autonomous (maybe even 26 ball)
 - Red alliance autonomous
+
+---
+## Need help? With General Tuning and learning how the bot works?
+### Tuning & Maintenance Guide 🔧
+
+#### **Re-Zeroing the Hood (`TestHood.java`)**
+If the hood gear slips or the physical zero shifts:
+1. Open **FTC Dashboard** and run `TestHood.java`.
+2. Physically detach the hood from its driving gear.
+3. In Dashboard, set `hoodPosition` to **0**.
+4. Set `hoodPosition` to **0.5**.
+5. While the servo is moving toward the 0.5 position, physically slide the hood back into the gears.
+6. Verify range of motion in Dashboard.
+
+#### **Re-Zeroing the Spindexer (`TestSpindexer.java`)**
+If the Spindexer positions are misaligned with the intake or shooter:
+1. Run `TestSpindexer.java` and open Dashboard.
+2. Set all `intakePosition` and `shootPosition` variables to **0** in the `Spindexer` class via Dashboard.
+3. Use the **Bumpers** on Gamepad 1 to cycle through positions.
+4. With a partner's help, adjust the values in Dashboard until:
+    - **Intake Mode**: Each slot is perfectly centered with the front of the intake.
+    - **Shoot Mode**: Each slot is perfectly centered with the transfer forks.
+5. Save these new values back into the `Spindexer.java` constants.
+
+#### **Turret Tuning (`TestTurret.java`)**
+- Use the Dashboard to play with PID values (`turretKp`, `turretKd`) and `maxPower`.
+- Observe how the turret interacts with the Pinpoint and Limelight data.
+- Check for oscillation or sluggishness and adjust coefficients accordingly.
+
+#### **Shooter & Transfer Tuning**
+- **Shooter**: Run `TestShooter.java` to verify flywheel RPM consistency and bang-bang threshold performance.
+- **Transfer**: `TestTransfer.java` (if available) or `TestSpindexer.java` can be used via Dashboard to verify `leftUp`/`rightUp` and `leftDown`/`rightDown` positions are clearing the Spindexer slots cleanly.
 
 ---
 

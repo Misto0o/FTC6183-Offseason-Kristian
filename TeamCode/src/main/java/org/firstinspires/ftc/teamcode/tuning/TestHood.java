@@ -6,7 +6,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.Gamepad;
 import com.qualcomm.robotcore.hardware.Servo;
 @Config
-@TeleOp(name = "Test Hood")
+@TeleOp(name = "Test Hood", group = "Tuning")
 public class TestHood extends LinearOpMode {
     public static double hoodPosition = 0;
     @Override

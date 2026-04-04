@@ -14,12 +14,12 @@ public class Spindexer {
     public static float grUpper = 160, grLower = 140;
 
     // ── Servo positions ───────────────────────────────────────────────────────
-    public static double intakePositionOne   = 0.423;
-    public static double intakePositionTwo   = 0.18;
-    public static double intakePositionThree = 0.68;
-    public static double shootPositionOne    = 0.559;
-    public static double shootPositionTwo    = 0.312;
-    public static double shootPositionThree  = 0.06;
+    public static double intakePositionOne   = 0.22;
+    public static double intakePositionTwo   = 0.51;
+    public static double intakePositionThree = 0.8;
+    public static double shootPositionOne    = 0.665;
+    public static double shootPositionTwo    = 0.08;
+    public static double shootPositionThree  = 0.37;
 
     public static final Spindexer INSTANCE = new Spindexer();
     private Spindexer() {}

@@ -4,33 +4,16 @@ import com.acmerobotics.dashboard.FtcDashboard;
 import com.acmerobotics.dashboard.telemetry.MultipleTelemetry;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
+import org.firstinspires.ftc.teamcode.robot.Drivetrain;
 
 @TeleOp(name = "Drivetrain Test", group = "Tuning")
 public class driveTrainTest extends OpMode {
 
-    private DcMotorEx frontLeftMotor;
-    private DcMotorEx backLeftMotor;
-    private DcMotorEx frontRightMotor;
-    private DcMotorEx backRightMotor;
-
     @Override
     public void init() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
-
-        frontLeftMotor  = hardwareMap.get(DcMotorEx.class, "fl");
-        backLeftMotor   = hardwareMap.get(DcMotorEx.class, "bl");
-        frontRightMotor = hardwareMap.get(DcMotorEx.class, "fr");
-        backRightMotor  = hardwareMap.get(DcMotorEx.class, "br");
-
-        frontLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        backLeftMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        frontRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        backRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-
-        // No direction set intentionally — use this opmode to figure out which ones need REVERSE
-        telemetry.addLine("Joystick = mecanum drive (same math as Teleop)");
+        Drivetrain.getInstance().init(hardwareMap);
+        telemetry.addLine("Joystick = full mecanum drive via Drivetrain.java");
         telemetry.addLine("DPad Up    = Front Left only");
         telemetry.addLine("DPad Down  = Back Left only");
         telemetry.addLine("DPad Left  = Front Right only");
@@ -40,46 +23,24 @@ public class driveTrainTest extends OpMode {
 
     @Override
     public void loop() {
-        // Same axis mapping as Drivetrain.drive(x, y, rx)
-        // Teleop calls: drive(-left_stick_x, left_stick_y, -right_stick_x)
-        double x  = -gamepad1.left_stick_x;
-        double y  =  gamepad1.left_stick_y;
-        double rx = -gamepad1.right_stick_x;
-
-        // ── DPad: spin one wheel at a time at 0.5 power ──────────────────────
-        if (gamepad1.dpad_up) {
-            frontLeftMotor.setPower(0.5);
-            backLeftMotor.setPower(0);
-            frontRightMotor.setPower(0);
-            backRightMotor.setPower(0);
-        } else if (gamepad1.dpad_down) {
-            frontLeftMotor.setPower(0);
-            backLeftMotor.setPower(0.5);
-            frontRightMotor.setPower(0);
-            backRightMotor.setPower(0);
-        } else if (gamepad1.dpad_left) {
-            frontLeftMotor.setPower(0);
-            backLeftMotor.setPower(0);
-            frontRightMotor.setPower(0.5);
-            backRightMotor.setPower(0);
-        } else if (gamepad1.dpad_right) {
-            frontLeftMotor.setPower(0);
-            backLeftMotor.setPower(0);
-            frontRightMotor.setPower(0);
-            backRightMotor.setPower(0.5);
+        if (gamepad1.dpad_up || gamepad1.dpad_down || gamepad1.dpad_left || gamepad1.dpad_right) {
+            // DPad: bypass Drivetrain and spin one motor at a time raw
+            Drivetrain.getInstance().drive(
+                    gamepad1.dpad_up    ? 0.5 : gamepad1.dpad_down  ? -0.5 : 0,
+                    gamepad1.dpad_left  ? 0.5 : gamepad1.dpad_right ? -0.5 : 0,
+                    0
+            );
         } else {
-            // ── Joystick: mecanum drive matching Drivetrain.java ──────────────
-            double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
-            frontLeftMotor.setPower((y - x + rx) / denominator);
-            backLeftMotor.setPower((y + x + rx) / denominator);
-            frontRightMotor.setPower((y + x - rx) / denominator);
-            backRightMotor.setPower((y - x - rx) / denominator);
+            Drivetrain.getInstance().drive(
+                    -gamepad1.left_stick_y,
+                    gamepad1.left_stick_x,
+                    gamepad1.right_stick_x * Drivetrain.getInstance().getTurnSpeed()
+            );
         }
 
-        telemetry.addData("FL power", frontLeftMotor.getPower());
-        telemetry.addData("BL power", backLeftMotor.getPower());
-        telemetry.addData("FR power", frontRightMotor.getPower());
-        telemetry.addData("BR power", backRightMotor.getPower());
+        telemetry.addData("Y (fwd/back)", -gamepad1.left_stick_y);
+        telemetry.addData("X (strafe)",    gamepad1.left_stick_x);
+        telemetry.addData("RX (turn)",     gamepad1.right_stick_x);
         telemetry.update();
     }
 }

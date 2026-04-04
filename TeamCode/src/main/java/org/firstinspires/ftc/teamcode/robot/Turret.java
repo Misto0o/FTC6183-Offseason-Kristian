@@ -99,9 +99,8 @@ public class Turret {
 
     public double getVelocity() {
         if (shooterMotor1 == null) return 0;
-        return shooterMotor1.getVelocity();
+        return Math.abs(shooterMotor1.getVelocity());
     }
-
 
     public void aimAtGoal(Aliance aliance, int goalId) {
         double error = Math.abs(getTurretAngle() - getTurretAngleSet());
@@ -238,8 +237,8 @@ public class Turret {
                 }
                 // within deadband — hold current power (no flip-flopping)
             }
-            shooterMotor1.setPower(shooterPower);
-            shooterMotor2.setPower(-shooterPower);
+            shooterMotor1.setPower(-shooterPower);
+            shooterMotor2.setPower(shooterPower);
         }
 
         // --- Turret PD position control ---

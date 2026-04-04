@@ -14,7 +14,7 @@ import org.firstinspires.ftc.teamcode.robot.Transfer;
 import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 
-@TeleOp
+@TeleOp (name = "TestSpindexer", group = "Tuning")
 @Config
 public class TestSpindexer extends OpMode {
 

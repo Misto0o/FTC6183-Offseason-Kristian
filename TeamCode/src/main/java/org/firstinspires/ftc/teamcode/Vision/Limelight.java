@@ -44,7 +44,6 @@ public class Limelight {
         if (limelight == null) return null;
         return limelight.getLatestResult();
     }
-    // TODO: Pre program the turret angle at TSL
     public double getTx(int tagID) {
         if (limelight == null) return 0;
         LLResult latest = limelight.getLatestResult();

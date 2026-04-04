@@ -10,7 +10,7 @@ import org.firstinspires.ftc.teamcode.Vision.Limelight;
 
 import java.util.List;
 
-@TeleOp(name = "TestLimelight")
+@TeleOp(name = "TestLimelight", group = "Tuning")
 public class TestLimelight extends OpMode {
 
     @Override

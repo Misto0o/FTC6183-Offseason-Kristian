@@ -16,7 +16,7 @@ import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 
 @Config
-@TeleOp(name = "TestTurret")
+@TeleOp(name = "TestTurret", group = "Tuning")
 public class TestTurret extends OpMode {
 
     public static double turretAngle = 0;

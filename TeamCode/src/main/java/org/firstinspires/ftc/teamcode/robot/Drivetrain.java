@@ -2,7 +2,11 @@ package org.firstinspires.ftc.teamcode.robot;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareMap;
+import com.acmerobotics.dashboard.config.Config;
+@Config
+// FINAL DRIVETRAIN CODE DO NOT TOUCH
 public class Drivetrain {
 
     private static Drivetrain INSTANCE;
@@ -13,6 +17,7 @@ public class Drivetrain {
     private DcMotorEx backRightMotor;
 
     private double turnSpeed = 1;
+
 
     private Drivetrain() {}
 
@@ -34,18 +39,18 @@ public class Drivetrain {
         frontRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         backRightMotor.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        frontLeftMotor.setDirection(DcMotor.Direction.REVERSE);
+        frontLeftMotor.setDirection(DcMotor.Direction.FORWARD);
         backLeftMotor.setDirection(DcMotor.Direction.REVERSE);
         frontRightMotor.setDirection(DcMotor.Direction.FORWARD);
-        backRightMotor.setDirection(DcMotor.Direction.REVERSE);
+        backRightMotor.setDirection(DcMotor.Direction.FORWARD);
     }
     //strafing code
     public void drive(double y, double x, double rx) {
         double denominator = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(rx), 1);
-        frontLeftMotor.setPower((x + y + rx) / denominator);
-        backLeftMotor.setPower((x - y + rx) / denominator);
-        frontRightMotor.setPower((x - y - rx) / denominator);
-        backRightMotor.setPower((x + y - rx) / denominator);
+        frontLeftMotor.setPower( (x + y + rx) / denominator);
+        backLeftMotor.setPower(  (x - y - rx) / denominator);  // rx negated
+        frontRightMotor.setPower((x - y + rx) / denominator);  // rx negated
+        backRightMotor.setPower( (x + y - rx) / denominator);
     }
 
     public void setTurnSpeed(double speed) {

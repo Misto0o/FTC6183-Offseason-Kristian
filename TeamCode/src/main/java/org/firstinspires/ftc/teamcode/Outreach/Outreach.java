@@ -13,7 +13,7 @@ import org.firstinspires.ftc.teamcode.robot.Spindexer;
 import org.firstinspires.ftc.teamcode.robot.Transfer;
 import org.firstinspires.ftc.teamcode.robot.Turret;
 
-@TeleOp(name = "Outreach", group = "!")
+@TeleOp(name = "Outreach", group = "Eventing")
 @Config
 public class Outreach extends OpMode {
 
@@ -348,9 +348,9 @@ public class Outreach extends OpMode {
 
         // ── Drivetrain ────────────────────────────────────────────────────────
         Drivetrain.getInstance().drive(
-                -gamepad1.left_stick_x,
-                gamepad1.left_stick_y,
-                -gamepad1.right_stick_x
+                -gamepad1.left_stick_y,
+                gamepad1.left_stick_x,
+                gamepad1.right_stick_x * Drivetrain.getInstance().getTurnSpeed()
         );
 
         // ── Periodic ─────────────────────────────────────────────────────────
