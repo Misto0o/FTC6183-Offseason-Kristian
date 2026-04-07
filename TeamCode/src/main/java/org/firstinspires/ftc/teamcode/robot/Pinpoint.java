@@ -43,6 +43,12 @@ public class Pinpoint {
         return pinpoint.getHeading(AngleUnit.DEGREES);
     }
 
+    public void resetPosAndIMU() {
+        if (pinpoint != null) {
+            pinpoint.resetPosAndIMU();
+        }
+    }
+
     // Periodic update
     public void periodic() {
         if (pinpoint != null) {

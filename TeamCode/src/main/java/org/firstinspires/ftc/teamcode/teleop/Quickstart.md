@@ -40,6 +40,30 @@ confirmation.
 | MOVING | Spindexer moving to next slot, waiting 150ms to settle |
 | READING | Reading color sensor, advancing to next slot |
 
+## Shot Ordering — nextShootPosition()
+Pattern-aware shot sequencing. Ensures balls are fired in the correct
+color order to match the field motif (GPP / PGP / PPG).
+
+**How It Works**
+1. Reads current ball colors from all 3 spindexer slots via `getBallAtPosition()`
+2. If pattern is locked, builds the expected fire order from `MatchPattern.getPattern()`
+3. Counts how many slots are EMPTY to determine how many balls have already been shot
+4. Fires the next color needed in the sequence — not just the next filled slot
+5. Falls back to first filled slot if pattern is UNKNOWN or no color match is found
+
+**Fire Order by Pattern**
+
+| Pattern | Shot 1 | Shot 2 | Shot 3 |
+|---------|--------|--------|--------|
+| GPP | GREEN | PURPLE | PURPLE |
+| PGP | PURPLE | GREEN | PURPLE |
+| PPG | PURPLE | PURPLE | GREEN |
+
+**Known Issues / Notes**
+- If a color sensor misread a ball the sequence can get off — press Triangle
+  to trigger a rescan and re-stamp the slot colors before shooting
+- Returns `-1` if all slots are empty — teleop treats this as shoot cycle complete
+
 ## Key Variables
 | Variable | Default | What it does                                         |
 |----------|---------|------------------------------------------------------|
@@ -74,5 +98,3 @@ confirmation.
   always do this from the physical starting corner for best accuracy
 - Red alliance starting position is `(8.5, 9)` heading `180°`,
   Blue is `(135.5, 9)` heading `0°`
-- `intakeOrder[]` tracks the order balls were loaded so shot sequence
-  matches the field pattern (GPP/PGP/PPG) correctly

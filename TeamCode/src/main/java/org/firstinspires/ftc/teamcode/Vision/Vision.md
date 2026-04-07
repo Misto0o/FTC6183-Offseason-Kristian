@@ -42,8 +42,8 @@ the tag isn't visible, so the robot will never crash from a missing camera.
 **How It's Used**
 - `Turret.java` calls `getTx(BLUE_GOAL_ID)` every tick during fine-tune stage to nudge aim
 - `MatchPattern.java` calls `patternFromObelisk()` during `init_loop()` to lock the field motif
-- `distanceFromTag()` adds a fixed `+16` inch offset to both X and Z — this accounts for
-  camera mounting position, do not remove it
+- `distanceFromTag()` adds a fixed `+16` inch offset to both X and Z to account for camera mounting
+- Camera is mounted horizontally on top of the shooter — wide field of view, sees most of the field
 
 **Known Issues / Notes**
 - Poll rate is set to 100Hz on init — do not lower this or aiming will lag
@@ -82,3 +82,4 @@ triggers a ball-present reading.
 - Tune `BALL_MIN_CM` and `BALL_MAX_CM` on Dashboard if detection is triggering
   too early or missing balls entirely
 - Sensor has a minimum reliable range — do not set `BALL_MIN_CM` below `2.0`
+- Wired to Control Hub I2C Bus 0, Port 0 — see DS Config doc for full port map

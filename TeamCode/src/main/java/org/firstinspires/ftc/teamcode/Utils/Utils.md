@@ -106,3 +106,19 @@ green ball detection.
 - Current hue ranges from `Spindexer.java` are displayed live — no need
   to cross-reference the file manually while tuning
 - Gain defaults to 2 — increase if readings are too low in dim lighting
+
+## ShooterTables
+Static loader that populates Interpolator instances for flywheel velocity
+and hood position for both alliances. Data points sourced from field testing
+via DataCollection.java.
+
+**How to Use**
+- `loadBlueShooter()`, `loadBlueHood()`, `loadRedShooter()`, `loadRedHood()`
+  are called in `init()`
+
+**Notes**
+See the ShooterTable spreadsheet for how data is structured and how to
+add new points: [ShooterTable Spreadsheet](https://docs.google.com/spreadsheets/d/1oTGg8vLRNqRh52t9FsZwadkLCS6sTmQx/edit?usp=sharing&ouid=110208191089846695150&rtpof=true&sd=true)
+
+Red and Blue tables are mirrored across the 144" field centerline.
+loadBlueShooter / loadBlueHood / loadRedShooter / loadRedHood

@@ -160,13 +160,15 @@ Tracks robot position using GoBilda odometry.
 
 ### Key Methods
 
-| Method | What it does |
-|--------|-------------|
-| `init(hardwareMap)` | Initializes odometry |
-| `periodic()` | Updates position |
-| `getPosX() / getPosY()` | Returns position |
-| `getHeading()` | Returns heading |
-| `updatePosition(pose)` | Overrides position |
+| Method                  | What it does            |
+|-------------------------|-------------------------|
+| `init(hardwareMap)`     | Initializes odometry    |
+| `periodic()`            | Updates position        |
+| `getPosX() / getPosY()` | Returns position        |
+| `getHeading()`          | Returns heading         |
+| `updatePosition(pose)`  | Overrides position      |
+| `resetPosAndIMU()`      | Resets position and IMU |
+
 
 ### Notes
 - `periodic()` must run every loop.

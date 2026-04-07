@@ -212,3 +212,35 @@ step-by-step instructions.
 - Logged points only show on Driver Station — take a photo or write into spreadsheet
   before stopping the opmode or they will be lost
 - Red alliance data collection not yet implemented — do blue first
+
+## TestPinpoint.java
+Tests Pinpoint odometry — verifies position tracking and heading are
+accurate before running any auto or turret tracking that depends on it.
+
+**Hardware Used:** `"pinpoint"`, `"fl"`, `"bl"`, `"fr"`, `"br"`
+
+**How To Use**
+1. Place robot at a known field position and run the opmode
+2. Drive forward — Y should increase. Strafe right — X should increase
+3. Rotate CCW — heading should increase
+4. Drive a full square and verify robot returns close to (0, 0)
+5. Press **A** to reset position and heading to zero at any time
+
+**Sanity Checks**
+
+| Action | Expected |
+|--------|----------|
+| Drive forward | Y increases |
+| Strafe right | X increases |
+| Rotate CCW | Heading increases |
+| Full square path | Returns near (0, 0) |
+
+**Key Notes**
+- Heading comes from Pinpoint's onboard IMU, not the Control Hub IMU
+- If drift is bad on the square test, check pod contact with the ground
+  and verify offsets in `Pinpoint.java` (4.5" strafe, −7.125" forward)
+- Fix encoder direction issues in `Pinpoint.java`, not here
+
+**Known Issues / Notes**
+- If telemetry shows 0,0 and never updates, Pinpoint is not connected
+  or the hardware name `"pinpoint"` doesn't match your config

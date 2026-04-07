@@ -322,6 +322,7 @@ The goal is a robot that is **consistent, predictable, and minimally dependent o
 - **`TestLimelight.java`** — AprilTag detection and distance testing
 - **`TestHood.java`** — Hood servo position tuning
 - **`TestDriveTrain.java`** - Simple Mecanum DriveTrain test to make sure wheels are working
+- **`TestPinpoint.java`** - Pinpoint odometry test
 
 ---
 
