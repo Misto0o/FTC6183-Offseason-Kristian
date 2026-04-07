@@ -18,7 +18,9 @@ public class DistanceSensor {
 
     public double getDistanceCM() {
         if (sensor == null) return 999;
-        return sensor.getDistance(DistanceUnit.CM);
+        double d = sensor.getDistance(DistanceUnit.CM);
+        if (Double.isNaN(d) || Double.isInfinite(d)) return 999;
+        return d;
     }
 
     public boolean isBallPresent() {

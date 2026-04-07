@@ -95,6 +95,9 @@ public class FullTest extends OpMode {
                 intakeOn = false;
                 dwelling = false;
                 Intake.INSTANCE.idle();
+                Turret.INSTANCE.setVelocity(0);
+                Limelight.INSTANCE.stop();
+                Turret.INSTANCE.resetFineTune();
             } else {
                 shootMode = true;
                 Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
@@ -193,6 +196,8 @@ public class FullTest extends OpMode {
                         shootMode = true;
                         intakeOn  = false;
                         Intake.INSTANCE.idle();
+                        Intake.INSTANCE.idle();
+                        Limelight.INSTANCE.start();
                         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
                     } else {
                         int free = Spindexer.INSTANCE.freePosition();
@@ -210,6 +215,8 @@ public class FullTest extends OpMode {
                     shootMode   = false;
                     squareState = 0;
                     Turret.INSTANCE.setVelocity(0);
+                    Limelight.INSTANCE.stop();
+                    Turret.INSTANCE.resetFineTune();
                     Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
                 } else {
                     int filled = Spindexer.INSTANCE.filledPosition();
@@ -236,7 +243,7 @@ public class FullTest extends OpMode {
             if (shootVelocity > 0 && shootVelocity < targetVelocity) targetVelocity = shootVelocity;
         }
 
-        if (shootMode) Turret.INSTANCE.followGoalOdometryPositional(currentAliance);
+        if (shootMode) Turret.INSTANCE.aimAtGoal(currentAliance, goalId);
         if (squareState > 0) Turret.INSTANCE.setVelocity(targetVelocity);
         else                  Turret.INSTANCE.setVelocity(0);
 

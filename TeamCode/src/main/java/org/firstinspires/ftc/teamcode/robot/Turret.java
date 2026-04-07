@@ -103,22 +103,18 @@ public class Turret {
     }
 
     public void aimAtGoal(Aliance aliance, int goalId) {
-        double error = Math.abs(getTurretAngle() - getTurretAngleSet());
+        double turretError = Math.abs(getTurretAngle() - getTurretAngleSet());
 
         if (!fineTuneActive) {
-            // Stage 1 — odometry coarse aim
             followGoalOdometryPositional(aliance);
-            if (error <= fineTuneThresholdDeg) {
+            if (turretError <= fineTuneThresholdDeg) {
                 fineTuneActive = true;
-                Limelight.INSTANCE.start();
             }
         } else {
-            // Stage 2 — Limelight tx fine tune
             double tx = Limelight.INSTANCE.getTx(goalId);
             if (tx == 0) {
-                // Tag not seen — fall back to odometry
                 followGoalOdometryPositional(aliance);
-            } else if (Math.abs(tx) > fineTuneBangBangDeg) {
+            } else if (turretError < 2.0 && Math.abs(tx) > fineTuneBangBangDeg) {
                 updateAngleOffset(tx > 0 ? -fineTuneNudge : fineTuneNudge);
             }
         }

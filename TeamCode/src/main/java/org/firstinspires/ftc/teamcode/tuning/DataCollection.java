@@ -17,7 +17,6 @@ import org.firstinspires.ftc.teamcode.robot.Spindexer;
 import org.firstinspires.ftc.teamcode.robot.Transfer;
 import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
-import org.firstinspires.ftc.teamcode.Vision.Limelight;
 
 import java.util.ArrayList;
 import java.util.Locale;
@@ -27,7 +26,7 @@ import java.util.Locale;
 public class DataCollection extends OpMode {
 
     /*
- Hello Provalone, here is what you're working on today:
+ Hello Provolone, here is what you're working on today:
 
  GOAL: Collect shooter tuning data points for the lookup table.
  Work on Alliance Blue for Today.
@@ -115,7 +114,6 @@ public class DataCollection extends OpMode {
         Transfer.INSTANCE.initialize(hardwareMap);
         Transfer.INSTANCE.transferDown();
         Pinpoint.INSTANCE.init(hardwareMap);
-        Limelight.INSTANCE.initialize(hardwareMap);
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
                 hardwareMap.get(com.qualcomm.robotcore.hardware.Servo.class, "spinServo"),
@@ -151,7 +149,6 @@ public class DataCollection extends OpMode {
         Pinpoint.INSTANCE.periodic();
         double px = Pinpoint.INSTANCE.getPosX();
         double py = Pinpoint.INSTANCE.getPosY();
-        int goalId = Limelight.BLUE_GOAL_ID;
 
         // ── Triangle: intake on / rescan toggle ──────────────────────────────
         if (triangle && !lastTriangle) {
@@ -352,10 +349,9 @@ public class DataCollection extends OpMode {
         // ── Turret tracking + velocity + hood ────────────────────────────────
         if (squareState > 0) {
             if (!turretLock) {
-                Turret.INSTANCE.aimAtGoal(Aliance.BLUE, goalId);
+                Turret.INSTANCE.followGoalOdometryPositional(Aliance.BLUE);
             } else {
                 Turret.INSTANCE.setToAngle(270);
-                Turret.INSTANCE.resetFineTune();
             }
             Turret.INSTANCE.setVelocity(shootVelocity);
             Turret.INSTANCE.setHoodPosition(hoodPosition);
@@ -363,7 +359,6 @@ public class DataCollection extends OpMode {
             Turret.INSTANCE.setToAngle(270);
             Turret.INSTANCE.setVelocity(0);
             Turret.INSTANCE.setHoodPosition(1.0);
-            Turret.INSTANCE.resetFineTune();
         }
 
         // ── Rumble when ready ─────────────────────────────────────────────────
@@ -403,8 +398,6 @@ public class DataCollection extends OpMode {
         telemetry.addData("Hood",              hoodPosition);
         telemetry.addData("Turret Angle",      Turret.INSTANCE.getTurretAngle());
         telemetry.addData("Angle Set",         Turret.INSTANCE.getTurretAngleSet());
-        telemetry.addData("LL tx",             Limelight.INSTANCE.getTx(goalId));
-        telemetry.addData("fineTuneActive",    Turret.INSTANCE.fineTuneActive);
 
         telemetry.addLine("── SPINDEXER ────────────────────────────");
         telemetry.addData("Intake", intakeOn ? "ON" : "OFF");
@@ -446,6 +439,5 @@ public class DataCollection extends OpMode {
     public void stop() {
         Turret.INSTANCE.setVelocity(0);
         Intake.INSTANCE.idle();
-        Limelight.INSTANCE.stop();
     }
 }

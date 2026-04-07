@@ -7,9 +7,8 @@ Over the course of this offseason, the entire codebase was rebuilt from the grou
 
 ## TL;DR Welcome!
 - Full robot codebase rewritten from NextFTC → FTC SDK
-- Two-stage turret aiming (Odometry + Limelight)
-- Modular subsystem architecture with tuning OpModes
-- Built for reliability, readability, and team scalability
+- New autos
+- Bug fixes + code changes
 
 ---
 
@@ -25,8 +24,16 @@ The decision was made to strip NextFTC out entirely and rewrite everything in **
 
 ---
 
-## What Changed — April 4th, 2026 Update
-### Turret Aiming — How It Works:
+## What Changed — April 6th, 2026 Update
+
+### Autonomous 🤖
+Two new fully written autos, both pathing-only for now with subsystem hooks ready to fill in:
+- **BlueNineBallAuto** — 9 ball auto: preload → middle row → top row, built from PP visualizer
+- **BlueTwelveBallAuto** — 12 ball auto: adapted from Cheick's original path coordinates, rewritten in plain iterative style with no NextFTC dependency. Uses a `BezierCurve` sweep on the middle row for better ball contact
+
+Both autos use a clean enum state machine and a `waitFor()` timer helper instead of blocking `sleep()` calls.
+
+### Fixed Turret Aiming — How It Works 🎯
 
 The turret uses a two-stage aiming system to lock onto the goal.
 
@@ -39,26 +46,15 @@ Once the turret angle error drops below `fineTuneThresholdDeg` (default 5°), `f
 **Turret lock override**
 Right Trigger toggles `turretLock`, which bypasses both stages entirely and holds the turret at the fixed `turretAngle` park position. Useful if tracking is fighting the driver or the tag is being blocked.
 
-**SimpleAuto**
-Created a simple auto for testing pathing will be a 9 ball auto if everything works perfectly.
+### Drivetrain 🚗
+Rewrote drive math from scratch — cleaner mecanum calculations, removed unnecessary abstraction layers. Noticeably faster and more responsive than the NextFTC version.
 
-**Fixed Drive Train**
-DriveTrain now has perfect driving and is 100% faster with better logic and math.
+### Spindexer Match Pattern Fix 🔄
+Fixed a bug where the spindexer's shooting order could get out of sequence depending on intake order. The shooting sequence is now always correct regardless of which slots balls were loaded into.
 
-### New Controls & Logic:
-- **Triangle**: Toggles intake on/off. Second press triggers a non-blocking **Spindexer Rescan** to update ball occupancy data.
-- **Circle**: Emergency Reset — kills all mechanisms and resets state machines to IDLE.
-- **Cross**: Triggers **Auto-Shoot All** sequence if flywheel is ready; otherwise increments `hoodOverride`.
-- **Square**: Cycles Flywheel states: OFF -> SPINNING UP (Rumbles when ready) -> READY.
-- **DPad Left / DPad Right**: Force mode switches regardless of current state.
-    - **DPad Left** — force intake mode: kills flywheel, turns intake on, resets spindexer to first free slot.
-    - **DPad Right** — force shoot mode: stops intake, spins flywheel up to state 1, moves spindexer to next ball to shoot.
-- **DPad Up**: Reset odometry to corner + zero turret offset.
-- **DPad Down**: Zero turret angle offset.
-- **Left Trigger**: Reverse intake (if intake is on).
-- **Right Trigger**: Toggle turret lock.
-- **Bumpers**: Manual Spindexer rotation (Next/Previous).
-- **Match Pattern Detection**: Added `MatchPattern.java` to detect and lock field motifs (GPP/PGP/PPG) during init for color-matched shooting order.
+### Subsystem Readmes 📖
+
+Every subsystem now has its own README with a quickstart explanation, hardware notes, and tuning tips. Useful if anyone new needs to understand a specific mechanism without reading all the code.
 
 ---
 
@@ -70,10 +66,6 @@ DriveTrain now has perfect driving and is 100% faster with better logic and math
 
 [ShooterTable Spreadsheet](https://docs.google.com/spreadsheets/d/1oTGg8vLRNqRh52t9FsZwadkLCS6sTmQx/edit?usp=sharing&ouid=110208191089846695150&rtpof=true&sd=true)
 
-# Removed ALL Autos..
-**Why?** 
-**I noticed that the old autos from Cheicks code was flawed and dated and I want to create my owns instead of stealing his code**
-- Created a new **SimpleAuto.java** that just runs a simple 9 ball auto path
 
 ---
 
@@ -146,6 +138,37 @@ DriveTrain now has perfect driving and is 100% faster with better logic and math
 - Points sourced from field testing — mirror red/blue across the 144" centerline
 
 ---
+## OpModes
+
+### Teleop (`org.firstinspires.ftc.teamcode.teleop.Teleop`)
+Full competition driver-controlled period. Alliance hardcoded Blue (Red support present). Pattern detected during init, locked at match start. Full color-matched shoot sequencing, auto-spindexing with dwell, jam retry, Limelight + Pinpoint turret aim.
+
+### Autonomous (`org.firstinspires.ftc.teamcode.Auto`)
+3 Autonomous pathings to be tuned and worked on next updates. 
+
+## Pedro Pathing (`org.firstinspires.ftc.teamcode.Pedro`)
+
+No changes made. Used for autonomous path following only.
+
+- Mass: 35kg
+- Forward zero power acceleration: −43.18
+- Lateral zero power acceleration: −64
+- Translational PIDF: (0.175, 0, 0.01, 0.03)
+- Heading PIDF: (1, 0, 0.02, 0.03)
+- Drive PIDF: (0.0025, 0, 0.00001, 0.6, 0.01)
+
+---
+
+## Utilities (`org.firstinspires.ftc.teamcode.Utils`)
+
+- **`Aliance.java`** — Simple enum: `BLUE`, `RED`
+- **`MatchPattern.java`** — Pattern detection, locking, and reset logic
+- **`Interpolator.java`** — 2D bilinear interpolation with nearest-neighbor fallback
+- **`SensorColor.java`** — HSV calibration OpMode for color sensor tuning, not used in match code
+- **`ShooterTables.java`** - Static table picker for Bilinear Lookup Table
+
+---
+
 ## System Flow (TeleOp) 🔄
 
 This robot operates as a **loop-driven, state-based system**.  
@@ -172,7 +195,6 @@ This ensures the robot starts the match with correct configuration and field awa
 ### 🔄 Main Control Loop (Runs Every Tick)
 
 Each loop cycle follows the same high-level flow: Driver Intent → State Updates → Subsystem Logic → Sensor Feedback → System Adjustments
-
 
 ---
 
@@ -260,58 +282,25 @@ The goal is a robot that is **consistent, predictable, and minimally dependent o
 
 ---
 
-## OpModes
-
-### Teleop (`org.firstinspires.ftc.teamcode.teleop.Teleop`)
-Full competition driver-controlled period. Alliance hardcoded Blue (Red support present). Pattern detected during init, locked at match start. Full color-matched shoot sequencing, auto-spindexing with dwell, jam retry, Limelight + Pinpoint turret aim.
-
-### Tuning OpModes (`org.firstinspires.ftc.teamcode.tuning`)
-
-- **`FullTest.java`** — Complete mechanism test with Limelight. Standardized controls, dwell logic, jam retry. Alliance hardcoded Blue.
-- **`DataCollection.java`** Full BiLinear Lookup Table testing. 
-- **`Outreach.java`** — Demo/event OpMode. Simplified for non-drivers. Origin of the dwell + auto-mode-switching logic now used everywhere.
-- **`TestTurret.java`** — Isolated turret and encoder tuning
-- **`TestShooter.java`** — Flywheel velocity tuning
-- **`TestSpindexer.java`** — Spindexer position and color sensor tuning
-- **`TestLimelight.java`** — AprilTag detection and distance testing
-- **`TestHood.java`** — Hood servo position tuning
-- **`TestDriveTrain.java`** - Simple Mecanum DriveTrain test to make sure wheels are working
-
-### Autonomous (`org.firstinspires.ftc.teamcode.Auto`)
-
-- **Removed until bot works flawlessly in teleop**
-
-
----
 
 ## TODO — Next update or so..
 
-- [ ] Make First 9 Ball Auto
-- [ ] Re-tune bilinear interpolator tables from new robot position data
-- [ ] Verify starting position coordinates match actual field setup
+### Autonomous
+- [ ] Run Localization Test to verify Pinpoint is tracking correctly post-recode
+- [ ] Test BlueNineBallAuto and BlueTwelveBallAuto driving only (no subsystems)
+- [ ] Verify starting pose coordinates match actual field setup
+- [ ] Wire in Intake + Spindexer calls into auto state machines
+- [ ] Wire in Turret + Shooter calls into auto state machines
+- [ ] Re-run all Pedro Pathing tuners to verify constants still hold on current bot
 
----
+### Shooter & Data
+- [ ] Re-tune bilinear interpolator tables from new robot position data (DataCollection.java)
+- [ ] Verify hood and velocity lookup tables are accurate across full field range
 
-## Pedro Pathing (`org.firstinspires.ftc.teamcode.Pedro`)
-
-No changes made. Used for autonomous path following only.
-
-- Mass: 35kg
-- Forward zero power acceleration: −43.18
-- Lateral zero power acceleration: −64
-- Translational PIDF: (0.175, 0, 0.01, 0.03)
-- Heading PIDF: (1, 0, 0.02, 0.03)
-- Drive PIDF: (0.0025, 0, 0.00001, 0.6, 0.01)
-
----
-
-## Utilities (`org.firstinspires.ftc.teamcode.Utils`)
-
-- **`Aliance.java`** — Simple enum: `BLUE`, `RED`
-- **`MatchPattern.java`** — Pattern detection, locking, and reset logic
-- **`Interpolator.java`** — 2D bilinear interpolation with nearest-neighbor fallback
-- **`SensorColor.java`** — HSV calibration OpMode for color sensor tuning, not used in match code
-- **`ShooterTables.java`** - Static table picker for Bilinear Lookup Table
+### Future
+- [ ] Red alliance autonomous
+- [ ] Full 12-ball auto with subsystems wired in
+- [ ] Shooting on the move (lead-target compensation using Pinpoint velocity)
 ---
 
 ## Future Goals
@@ -321,6 +310,21 @@ No changes made. Used for autonomous path following only.
 - Red alliance autonomous
 
 ---
+
+### Tuning OpModes (`org.firstinspires.ftc.teamcode.tuning`)
+
+- **`FullTest.java`** — Complete mechanism test with Limelight. Standardized controls, dwell logic, jam retry. Alliance hardcoded Blue.
+- **`DataCollection.java`** Full BiLinear Lookup Table testing.
+- **`Outreach.java`** — Demo/event OpMode. Simplified for non-drivers. Origin of the dwell + auto-mode-switching logic now used everywhere.
+- **`TestTurret.java`** — Isolated turret and encoder tuning
+- **`TestShooter.java`** — Flywheel velocity tuning
+- **`TestSpindexer.java`** — Spindexer position and color sensor tuning
+- **`TestLimelight.java`** — AprilTag detection and distance testing
+- **`TestHood.java`** — Hood servo position tuning
+- **`TestDriveTrain.java`** - Simple Mecanum DriveTrain test to make sure wheels are working
+
+---
+
 ## Need help? With General Tuning and learning how the bot works?
 ### Tuning & Maintenance Guide 🔧
 
