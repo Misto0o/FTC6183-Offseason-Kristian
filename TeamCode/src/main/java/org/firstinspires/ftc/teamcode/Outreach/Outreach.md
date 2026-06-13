@@ -1,65 +1,47 @@
-# Outreach.java
-**Package:** `org.firstinspires.ftc.teamcode.Outreach`
+# Outreach & Demo Mode 🤝
+**Package:** `org.firstinspires.ftc.teamcode.Outreach`  
 **Last Updated:** April 2026
 
-## What This Does
-Simplified OpMode for demo and outreach events. Designed to be easy for
-non-drivers to pick up and use — no odometry, no Limelight, no pattern
-detection. Just intake, shoot, and drive.
-
-## State Machines
-
-## ShooterState (int)
-
-| Value | Meaning |
-|-------|---------|
-| 0     | Off |
-| 1     | Spinning up — waiting to reach target velocity |
-| 2     | Ready — press Square to fire |
+## Overview
+`Outreach.java` is a simplified OpMode designed for public demonstrations and community events. It removes complex dependencies like Odometry and Limelight to ensure the robot remains easy to operate for non-drivers while maintaining the core "Intake and Shoot" experience.
 
 ---
 
-## ShootCycleState (Cross auto-shoot)
-
-| State         | Meaning |
-|---------------|---------|
-| IDLE          | Not running |
-| SET_POS       | Moving spindexer to next ball |
-| WAIT_POS      | Waiting for spindexer to settle |
-| TRANSFER_UP   | Flicking transfer up |
-| TRANSFER_DOWN | Flicking transfer back down |
-| MARK_EMPTY    | Marking slot as empty, advancing to next ball |
+## 🎮 How To Use
+1. **Initialize:** Select `Outreach` from the TeleOp menu.
+2. **Intake (Triangle):** Drive over balls to fill the Spindexer. The intake stops automatically when the 3 slots are full.
+3. **Spin Up (Square):** Press once to start the flywheels. The controller will rumble 3 times when the target RPM is reached.
+4. **Fire (Square):** Press again to fire a single ball.
+5. **Auto-Fire (Cross):** Rapidly sequence all 3 balls into the goal.
+6. **Kill Switch (DPad Left):** Immediately stops all motors and resets the state machines.
 
 ---
 
-## FlickState (manual single shot)
+## ⚙️ Key Configurations
+- **Velocity Control:** DPad Up/Down toggles between 3000 RPM (Far) and 1000 RPM (Near).
+- **Turret:** Fixed at -90° (static forward position).
+- **No Pattern Logic:** The robot fires balls in the order they were intaked, ignoring color sorting.
 
-| State     | Meaning |
-|-----------|---------|
-| IDLE      | Transfer down, ready |
-| WAIT_UP   | Transfer moving up, waiting 0.5s |
-| WAIT_DOWN | Transfer moving back down, waiting 0.5s |
+---
 
-## Key Variables
-| Variable | Default | What it does |
-|----------|---------|--------------|
-| `shootVelocity` | 3000 | Target flywheel velocity |
-| `intakeDwellSec` | 0.3 | How long to wait at each spindexer slot before reading color |
+## 🛠️ Internal State Machines
 
-## How To Use
-1. Power on robot and select **Outreach** from the TeleOp menu
-2. Press PLAY
-3. Hand the controller to the demo participant
-4. They press **Triangle** to turn on intake and drive under balls
-5. Spindexer fills automatically — intake stops when full
-6. Press **Square** to spin up the flywheel — controller rumbles 3 times when ready
-7. Press **Square** again to fire one ball — repeats until all 3 are fired
-8. Or press **Cross** to auto-fire all 3 balls in sequence
-9. Press **DPad Left** at any time to kill everything and reset
+### ShooterState
+| State | Behavior |
+|-------|----------|
+| 0 | Off |
+| 1 | Spinning up — monitoring RPM |
+| 2 | Ready — target velocity achieved |
 
-## Known Issues / Notes
-- Turret is locked at -90° no tracking
-- DPad Up sets velocity to 3000, DPad Down sets to 1000 — useful if
-  shooting from different distances at an event
-- No pattern detection — balls are fired in slot order regardless of color
-- If something jams press DPad Left to fully reset all state machines
+### FlickState (Manual)
+| State | Behavior |
+|-------|----------|
+| IDLE | Forks lowered |
+| WAIT_UP | Moving to delivery position |
+| WAIT_DOWN | Returning to rest |
+
+---
+
+## ⚠️ Notes
+- Designed for safety: Reduced power and simplified controls.
+- Useful for training new members on basic robot interaction before moving to the full Competition TeleOp.

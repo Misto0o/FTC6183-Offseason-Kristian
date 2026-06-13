@@ -40,7 +40,7 @@ public class TestShooter extends OpMode {
         Pinpoint.INSTANCE.init(hardwareMap);
         Transfer.INSTANCE.initialize(hardwareMap);
         Limelight.INSTANCE.initialize(hardwareMap);
-        Transfer.INSTANCE.transferDown();
+        Transfer.INSTANCE.transferDownAggressive();
         telemetry.addLine("Square = shooter on/off  |  Y = transfer up/down  |  X = single flick");
         telemetry.update();
     }
@@ -68,7 +68,7 @@ public class TestShooter extends OpMode {
         if (y && !prevY) {
             transferUp = !transferUp;
             if (transferUp) Transfer.INSTANCE.transferUp();
-            else            Transfer.INSTANCE.transferDown();
+            else            Transfer.INSTANCE.transferDownAggressive();
         }
 
         // X — single flick (up then back down immediately, for manual shot testing)
@@ -76,7 +76,7 @@ public class TestShooter extends OpMode {
             Transfer.INSTANCE.transferUp();
         }
         if (!x && prevX) {
-            Transfer.INSTANCE.transferDown();
+            Transfer.INSTANCE.transferDownAggressive();
         }
 
         prevY      = y;

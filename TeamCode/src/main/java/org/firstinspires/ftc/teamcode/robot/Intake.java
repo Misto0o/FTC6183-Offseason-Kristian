@@ -3,6 +3,11 @@ package org.firstinspires.ftc.teamcode.robot;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
+/**
+ * Intake Subsystem
+ * IMPORTANT: Simple single-motor intake system. 
+ * Operates on a singleton pattern to ensure consistent state across all OpModes.
+ */
 public class Intake {
 
     public static final Intake INSTANCE = new Intake();
@@ -16,7 +21,9 @@ public class Intake {
 
     public void init(HardwareMap hardwareMap) {
         intakeMotor = hardwareMap.get(DcMotor.class, "intake");
+        // IMPORTANT: Ensure motor starts at 0 power to prevent accidental movement on init.
         intakeMotor.setPower(0);
+        // Using RUN_WITHOUT_ENCODER as precise positioning isn't needed for intake rollers.
         intakeMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
     }
 

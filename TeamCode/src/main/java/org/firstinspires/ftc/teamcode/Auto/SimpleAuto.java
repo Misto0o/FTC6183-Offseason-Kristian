@@ -9,12 +9,18 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.teamcode.Pedro.Constants;
 
+/**
+ * Simple Autonomous
+ * IMPORTANT: A legacy/testing autonomous routine using LinearOpMode.
+ * It demonstrates a basic sequence of paths without complex state machines.
+ */
 @Autonomous(name = "Simple Auto", group = "Auto")
 public class SimpleAuto extends LinearOpMode {
 
     private Follower follower;
     private final ElapsedTime timer = new ElapsedTime();
 
+    // IMPORTANT: Safeguard to prevent the robot from getting stuck on a path.
     private static final double PATH_TIMEOUT = 5.0;
 
     private PathChain path1, path2, path3, path4, path5,
@@ -23,6 +29,7 @@ public class SimpleAuto extends LinearOpMode {
     @Override
     public void runOpMode() {
 
+        // IMPORTANT: Initializing the follower. Starting pose must match the physical placement.
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(new Pose(56.000, 8.000, 0));
 
@@ -34,8 +41,10 @@ public class SimpleAuto extends LinearOpMode {
 
         if (!opModeIsActive()) return;
 
+        // Start the drive system.
         follower.startTeleopDrive();
 
+        // Sequence of path following.
         followPath(path1);
         followPath(path2);
         followPath(path3);
@@ -51,6 +60,9 @@ public class SimpleAuto extends LinearOpMode {
         telemetry.update();
     }
 
+    /**
+     * IMPORTANT: Defines a series of straight lines (BezierLine) for the robot to follow.
+     */
     private void buildPaths() {
         path1 = follower.pathBuilder()
                 .addPath(new BezierLine(new Pose(56.000, 8.000), new Pose(47.620, 35.627)))
@@ -104,6 +116,10 @@ public class SimpleAuto extends LinearOpMode {
                 .build();
     }
 
+    /**
+     * IMPORTANT: Blocking helper to follow a path chain.
+     * Uses a timeout to ensure the robot doesn't get stuck if it can't reach a pose.
+     */
     private void followPath(PathChain path) {
         follower.followPath(path, true);
         timer.reset();
@@ -118,3 +134,4 @@ public class SimpleAuto extends LinearOpMode {
         follower.update();
     }
 }
+// Thank You Provolone

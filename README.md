@@ -1,48 +1,53 @@
-# FTC Robot Recode 🚀
+# FTC 6183 Loki — Robot Recode 🚀
 
-This repository marks the **start of a full 5-month recode** of our FTC robot software.
+This repository contains the completely refactored robot software for **FTC Team 6183 Loki**. 
 
-After our previous season, I decided to completely rebuild the robot code from the ground up. The goal is to make the code **cleaner, easier to understand, and easier for future programmers on the team to work with**.
-
-This repo will serve as the **new home for the robot code going forward**.
+During this 5-month offseason project, the codebase was rebuilt from the ground up, transitioning from a third-party command framework (NextFTC) to a clean, iterative **FTC SDK** implementation. The goal was to create a robust, readable, and highly maintainable foundation for current and future team members.
 
 ---
 
-# A New Beginning
+## 🏗️ Project Overview
 
-This project is meant to be a **fresh start** for how our robot software is structured and documented.
-
-Instead of letting the code grow messy over time, I want to build something that:
-
-- is easy for new programmers to understand
-- is well documented
-- can be expanded as the robot evolves
-- helps future team members learn how everything works
-
-This repository will continue to evolve throughout the offseason and the upcoming season.
+- **Architecture:** Iterative OpMode (Plain FTC SDK)
+- **Status:** Active Offseason Development / Refactor Complete
+- **Core Goal:** Reliability, Debuggability, and Ease of Training
+- **Lead Developer:** Kristian
+- **Contributor/Mentor:** Luke
 
 ---
 
-# Documentation
+## 🌟 Key Features
 
-I will be updating this **README and other documentation as much as possible** while development continues.
-
-The goal is to explain:
-
-- how each subsystem works
-- how the robot software is structured
-- how to tune and test different mechanisms
-- how new programmers can start contributing
-
-As the project grows, more documentation will be added.
+- **Custom Mecanum Drivetrain:** Optimized math for responsive and precise movement.
+- **Two-Stage Turret Aiming:** Combines **Pinpoint Odometry** for coarse targeting with **Limelight 3A** for high-precision fine-tuning.
+- **Bilinear Interpolation:** Dynamic lookup tables for shooter velocity and hood angles based on real-time field position.
+- **State-Machine Driven Subsystems:** Robust, non-blocking control logic for the Spindexer, Intake, and Transfer systems.
+- **Pattern Awareness:** Integrated logic to detect and sequence shots according to the field's AprilTag motif (GPP/PGP/PPG).
+- **Comprehensive Documentation:** Every package includes dedicated READMEs and tuning guides.
 
 ---
 
-# Offseason Development
+## 📂 Repository Structure
 
-This offseason development is primarily being worked on by:
+- [**`TeamCode/`**](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/readme.md) — The heart of the robot software.
+    - [`robot/`](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/robot/Subsystems.md) — All hardware subsystems (Drivetrain, Turret, Spindexer, etc.).
+    - [`teleop/`](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/teleop/Quickstart.md) — Competition and manual control OpModes.
+    - [`Auto/`](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/Auto/) — Pathing-only and fully integrated autonomous routines.
+    - [`Vision/`](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/Vision/Vision.md) — Limelight and Distance Sensor wrappers.
+    - [`Utils/`](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/Utils/Utils.md) — Math helpers, Interpolators, and Pattern Logic.
+    - [`tuning/`](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/tuning/tuning.md) — Isolated testing and calibration tools.
 
-- **Kristian**
-- **Luke (helping with offseason and guiding me how to go about things)**
+---
 
-We are both using this time to **refactor, test, and improve the robot code** before the next season
+## 🛠️ Getting Started
+
+1. **Clone the Repo:** Ensure you have the latest code.
+2. **Review the [Main TeamCode README](./TeamCode/src/main/java/org/firstinspires/ftc/teamcode/readme.md):** Detailed technical breakdown of the systems.
+3. **Hardware Configuration:** Matches the configuration name `Loki` (or as specified in the `robot/` subsystem files).
+4. **Tuning:** Use the OpModes in the `tuning` package to verify sensor thresholds and servo positions before running TeleOp.
+
+---
+
+## 📝 Contributions
+
+This project is a labor of love for Team 6183. If you are a team member looking to contribute, please check the package-specific READMEs for logic flow and "How-To" guides for each mechanism.

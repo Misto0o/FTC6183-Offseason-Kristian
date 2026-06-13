@@ -1,124 +1,52 @@
-# Utils Package
+# Utilities Package 🛠️
 **Package:** `org.firstinspires.ftc.teamcode.Utils`
 **Last Updated:** April 2026
 
-## What This Is
-Shared utility classes used across teleop, autonomous, and tuning opmodes.
-These are not opmodes themselves — they are helper classes that other code
-depends on. Do not modify these unless you understand what depends on them.
+This package contains mathematical helpers, game-specific logic, and shared constants used across the entire codebase.
 
 ---
 
-## Alliance.java
-Simple enum used to select alliance color. Passed into subsystems that
-need to know which goal to target or which color pattern to detect.
+## 📐 Interpolator
+**Purpose:**  
+A 2D lookup table using Bilinear Interpolation. It takes discrete data points (like "at position X,Y, the shooter needs power Z") and calculates the exact requirement for any point in between.
 
-**Values**
-
-| Value | Meaning |
-|-------|---------|
-| `BLUE` | Blue alliance |
-| `RED` | Red alliance |
+**Key Feature:**  
+Ensures the shooter and hood automatically adjust to the robot's distance and angle relative to the goal without manual driver input.
 
 ---
 
-## Interpolator.java
-2D lookup table with inverse distance weighting (IDW) interpolation.
-Takes a set of scattered `(x, y, value)` data points and interpolates
-a value for any `(x, y)` query — no grid required.
+## 📊 ShooterTables
+**Purpose:**  
+Static storage for calibrated shooter data. It populates the `Interpolator` instances with real-world testing data for both Blue and Red alliances.
 
-Used by `ShooterTables.java` to look up flywheel velocity and hood
-position based on robot coordinates on the field.
-
-**Key Methods**
-
-| Method | What it does |
-|--------|--------------|
-| `addPoint(x, y, value)` | Adds a data point to the table |
-| `get(x, y)` | Returns interpolated value at `(x, y)` |
-| `size()` | Returns number of data points loaded |
-
-**How It Works**
-- Each query point is weighted by inverse squared distance to every data point
-- Exact coordinate matches return instantly without interpolation
-- Throws `IllegalStateException` if called on an empty table
+**Contents:**
+- Flywheel RPM targets.
+- Hood servo position targets.
 
 ---
 
-## MatchPattern.java
-Static class that detects and locks the game's motif pattern from the
-obelisk via Limelight. Call `tryDetect()` every loop tick during init
-until `isLocked()` returns true, then read `getPattern()` for the result.
-Automatically shuts off the Limelight once the pattern is confirmed.
+## 🎯 MatchPattern
+**Purpose:**  
+Handles the detection of the randomization pattern (GPP, PGP, PPG) during the `init_loop`.
 
-**Pattern Values**
-
-| Value | Meaning |
-|-------|---------|
-| `GPP` | Green, Purple, Purple |
-| `PGP` | Purple, Green, Purple |
-| `PPG` | Purple, Purple, Green |
-| `UNKNOWN` | Not yet detected |
-
-**Key Methods**
-
-| Method | What it does |
-|--------|--------------|
-| `tryDetect()` | Scans for pattern — call every loop tick until locked |
-| `getPattern()` | Returns the detected `Pattern` enum value |
-| `isLocked()` | Returns true once pattern is confirmed |
-| `reset()` | Resets state — call in `init()` between matches |
-
-**Known Issues / Notes**
-- Once locked, `tryDetect()` does nothing — safe to keep calling
-- Limelight is shut off automatically after lock to save resources
-- Always call `reset()` in `init()` or stale data from last match carries over
+**Logic:**
+- Uses the Limelight to scan the obelisk.
+- "Locks" the pattern once confirmed to prevent accidental re-scanning during the match.
+- Shuts down the Limelight pipeline after locking to save processing power.
 
 ---
 
-## SensorColor.java
-Tuning opmode for calibrating the left and right color sensors. Displays
-live HSV readings and compares them against the hue ranges defined in
-`Spindexer.java`. Use this to find correct hue bounds for purple and
-green ball detection.
+## 🧠 PatternStrategy
+**Purpose:**  
+The "Brain" of the scoring system. It compares what is currently in the Spindexer and on the field ramp against the required Match Pattern.
 
-**Hardware Used:** `"leftColorSensor"`, `"rightColorSensor"`
+**Decision Output:**
+- Can we score the full pattern?
+- What color sequence should we fire?
+- Do we need to intake more balls from the ramp first?
 
-**Controls**
+---
 
-| Button | Action |
-|--------|--------|
-| Cross | Increase left sensor gain |
-| Triangle | Decrease left sensor gain |
-| Circle | Increase right sensor gain |
-| Square | Decrease right sensor gain |
-
-**How To Use**
-
-1. Run the opmode
-2. Hold a purple ball under the left sensor — note the hue reading
-3. Hold a green ball under the left sensor — note the hue reading
-4. Repeat for the right sensor
-5. Update the hue range constants in `Spindexer.java` to match
-6. Confirmed detection shows under `── DETECTION ──` on the dashboard
-
-**Known Issues / Notes**
-- Current hue ranges from `Spindexer.java` are displayed live — no need
-  to cross-reference the file manually while tuning
-- Gain defaults to 2 — increase if readings are too low in dim lighting
-
-## ShooterTables
-Static loader that populates Interpolator instances for flywheel velocity
-and hood position for both alliances. Data points sourced from field testing
-via DataCollection.java.
-
-**How to Use**
-- `loadBlueShooter()`, `loadBlueHood()`, `loadRedShooter()`, `loadRedHood()`
-  are called in `init()`
-
-**Notes**
-See the ShooterTable spreadsheet for how data is structured and how to
-add new points: [ShooterTable Spreadsheet](https://docs.google.com/spreadsheets/d/1oTGg8vLRNqRh52t9FsZwadkLCS6sTmQx/edit?usp=sharing&ouid=110208191089846695150&rtpof=true&sd=true)
-
-Red and Blue tables are mirrored across the 144" field centerline.
-loadBlueShooter / loadBlueHood / loadRedShooter / loadRedHood
+## 🎨 SensorColor
+**Purpose:**  
+A calibration tool for the Spindexer's color sensors. It provides live HSV (Hue, Saturation, Value) feedback to help tune the detection thresholds for purple and green balls.

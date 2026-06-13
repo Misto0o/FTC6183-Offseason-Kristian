@@ -1,25 +1,37 @@
 package org.firstinspires.ftc.teamcode.robot;
+
 import android.graphics.Color;
 import com.acmerobotics.dashboard.config.Config;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import java.util.Arrays;
+
+/**
+ * Spindexer Subsystem
+ * IMPORTANT: This system manages ball storage, color detection, and slot indexing.
+ * It uses two color sensors to "stamp" slots with the detected ball color for pattern matching.
+ */
 @Config
 public class Spindexer {
 
     // ── Color sensor HSV ranges ───────────────────────────────────────────────
-    public static float plUpper = 250, plLower = 210;
-    public static float glUpper = 170, glLower = 145;
-    public static float prUpper = 240, prLower = 200;
-    public static float grUpper = 160, grLower = 140;
+    // IMPORTANT: These ranges define the "Hue" window for ball detection. 
+    // If the robot fails to recognize balls, calibrate these using SensorColor.java.
+    public static float plUpper = 250, plLower = 210; // Purple Left
+    public static float glUpper = 170, glLower = 145; // Green Left
+    public static float prUpper = 240, prLower = 200; // Purple Right
+    public static float grUpper = 160, grLower = 140; // Green Right
 
     // ── Servo positions ───────────────────────────────────────────────────────
-    public static double intakePositionOne   = 0.22;
-    public static double intakePositionTwo   = 0.51;
-    public static double intakePositionThree = 0.8;
-    public static double shootPositionOne    = 0.665;
-    public static double shootPositionTwo    = 0.08;
-    public static double shootPositionThree  = 0.37;
+    // IMPORTANT: Intake positions align slots with the front intake.
+    public static double intakePositionOne   = 0.093;
+    public static double intakePositionTwo   = 0.3875;
+    public static double intakePositionThree = 0.68;
+    
+    // IMPORTANT: Shoot positions align slots with the transfer/flywheel exit.
+    public static double shootPositionOne    = 0.53;
+    public static double shootPositionTwo    = 0.83;
+    public static double shootPositionThree  = 0.23;
 
     public static final Spindexer INSTANCE = new Spindexer();
     private Spindexer() {}
@@ -50,9 +62,21 @@ public class Spindexer {
         }
     }
 
+    public float[] getLastHSVLeft() {
+        return hsvLeft;
+    }
+
+    public float[] getLastHSVRight() {
+        return hsvRight;
+    }
+
     public enum DetectedColor {
         GREEN, PURPLE, EMPTY;
 
+        /**
+         * IMPORTANT: This logic performs an OR check across both sensors.
+         * Only one sensor needs to see the color for the slot to be "stamped".
+         */
         public static DetectedColor getDetectedColor(float[] hsvLeft, float[] hsvRight) {
             boolean green  = (hsvLeft[0]  >= glLower && hsvLeft[0]  <= glUpper)
                     || (hsvRight[0] >= grLower && hsvRight[0] <= grUpper);
@@ -78,6 +102,9 @@ public class Spindexer {
         positionType = PositionType.INTAKE;
     }
 
+    /**
+     * Moves the servo to the hardware position mapped to the current Position + Mode.
+     */
     public void setToPosition(Position position) {
         currentPosition = position;
         double servoPos;
@@ -97,6 +124,10 @@ public class Spindexer {
         if (spinServo != null) spinServo.setPosition(servoPos);
     }
 
+    /**
+     * IMPORTANT: Search logic to find the next available slot.
+     * @return The index (0-2) of the next empty slot, or -1 if full.
+     */
     public int freePosition() {
         int pos = currentPosition.ordinal();
         for (int i = 0; i < 3; i++) {
@@ -107,6 +138,10 @@ public class Spindexer {
         return -1;
     }
 
+    /**
+     * IMPORTANT: Search logic to find the next filled slot for shooting.
+     * @return The index (0-2) of the next occupied slot, or -1 if empty.
+     */
     public int filledPosition() {
         int pos = currentPosition.ordinal();
         for (int i = 0; i < 3; i++) {
@@ -120,6 +155,10 @@ public class Spindexer {
         ballAtPosition[position.ordinal()] = color;
     }
 
+    /**
+     * Reads the current sensors and updates HSV buffers.
+     * IMPORTANT: Gain is set to 2 to improve sensitivity in dark arenas.
+     */
     public DetectedColor readCurrentColor() {
         if (leftColorSensor == null || rightColorSensor == null) return DetectedColor.EMPTY;
         leftColorSensor.setGain(2);
@@ -129,6 +168,9 @@ public class Spindexer {
         return DetectedColor.getDetectedColor(hsvLeft, hsvRight);
     }
 
+    /**
+     * IMPORTANT: Must be called every loop to update the 'full' and 'empty' flags.
+     */
     public void periodic() {
         boolean allEmpty = true, allFull = true;
         for (DetectedColor ball : ballAtPosition) {

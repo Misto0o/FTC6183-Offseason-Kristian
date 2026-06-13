@@ -112,7 +112,7 @@ public class DataCollection extends OpMode {
         Drivetrain.getInstance().init(hardwareMap);
         Turret.INSTANCE.initialize(hardwareMap);
         Transfer.INSTANCE.initialize(hardwareMap);
-        Transfer.INSTANCE.transferDown();
+        Transfer.INSTANCE.transferDownAggressive();
         Pinpoint.INSTANCE.init(hardwareMap);
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
@@ -217,7 +217,7 @@ public class DataCollection extends OpMode {
             dwelling     = false;
             Intake.INSTANCE.idle();
             Turret.INSTANCE.setVelocity(0);
-            Transfer.INSTANCE.transferDown();
+            Transfer.INSTANCE.transferDownAggressive();
             Turret.INSTANCE.setToAngle(270);
             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
         }
@@ -299,7 +299,7 @@ public class DataCollection extends OpMode {
         switch (flickState) {
             case WAIT_UP:
                 if (flickTimer.seconds() >= 0.5) {
-                    Transfer.INSTANCE.transferDown();
+                    Transfer.INSTANCE.transferDownAggressive();
                     flickTimer.reset();
                     flickState = FlickState.WAIT_DOWN;
                 }
@@ -349,7 +349,7 @@ public class DataCollection extends OpMode {
         // ── Turret tracking + velocity + hood ────────────────────────────────
         if (squareState > 0) {
             if (!turretLock) {
-                Turret.INSTANCE.followGoalOdometryPositional(Aliance.BLUE);
+                Turret.INSTANCE.aimAtGoal(Aliance.BLUE, 20);
             } else {
                 Turret.INSTANCE.setToAngle(270);
             }

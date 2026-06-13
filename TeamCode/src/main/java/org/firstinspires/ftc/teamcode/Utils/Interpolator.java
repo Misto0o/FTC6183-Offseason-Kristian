@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 2D lookup table with inverse distance weighting (IDW) interpolation.
- * Works on scattered, irregular data points — no grid required.
+ * 2D Interpolator
+ * IMPORTANT: This class provides a 2D lookup table using Nearest Neighbor logic.
+ * It is the core of the robot's "Auto-Aim" system, allowing it to determine
+ * shooter settings based on any (X, Y) coordinate on the field.
  */
 public class Interpolator {
 
@@ -15,22 +17,24 @@ public class Interpolator {
         final double x, y, value;
 
         DataPoint(double x, double y, double value) {
-            this.x = x;
-            this.y = y;
+            this.x     = x;
+            this.y     = y;
             this.value = value;
         }
 
+        /**
+         * IMPORTANT: Standard Pythagorean distance formula for 2D space.
+         */
         double distanceTo(double tx, double ty) {
             return Math.hypot(x - tx, y - ty);
         }
     }
 
+    /**
+     * IMPORTANT: Used to populate the table with calibrated field data.
+     */
     public void addPoint(double x, double y, double value) {
         dataPoints.add(new DataPoint(x, y, value));
-    }
-
-    public int size() {
-        return dataPoints.size();
     }
 
     public double get(double x, double y) {
@@ -38,14 +42,26 @@ public class Interpolator {
             throw new IllegalStateException("Interpolator has no data points");
         }
 
-        double weightedSum = 0, totalWeight = 0;
-        for (DataPoint p : dataPoints) {
+        // Sort by distance, take closest 4 points
+        double totalWeight = 0;
+        double weightedSum = 0;
+        int k = Math.min(4, dataPoints.size());
+
+        List<DataPoint> sorted = new ArrayList<>(dataPoints);
+        sorted.sort((a, b) -> Double.compare(a.distanceTo(x, y), b.distanceTo(x, y)));
+
+        for (int i = 0; i < k; i++) {
+            DataPoint p = sorted.get(i);
             double dist = p.distanceTo(x, y);
-            if (dist < 1e-9) return p.value; // exact match
-            double w = 1.0 / (dist * dist);  // inverse square distance
-            weightedSum += w * p.value;
-            totalWeight += w;
+
+            // If we're exactly on a point, return it immediately
+            if (dist < 0.001) return p.value;
+
+            double weight = 1.0 / (dist * dist); // inverse distance squared
+            weightedSum += weight * p.value;
+            totalWeight += weight;
         }
+
         return weightedSum / totalWeight;
     }
 }

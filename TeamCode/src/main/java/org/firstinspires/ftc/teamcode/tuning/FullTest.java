@@ -15,6 +15,11 @@ import org.firstinspires.ftc.teamcode.robot.Turret;
 import org.firstinspires.ftc.teamcode.Vision.Limelight;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 
+/**
+ * FullSystem Test OpMode
+ * IMPORTANT: This OpMode allows for testing all robot subsystems in a combined environment.
+ * Use this to verify that the intake-to-shoot transition works reliably before match play.
+ */
 @Config
 @TeleOp(name = "FullTest", group = "FullSystem")
 public class FullTest extends OpMode {
@@ -52,6 +57,8 @@ public class FullTest extends OpMode {
     @Override
     public void init() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
+        
+        // IMPORTANT: Initializing all major subsystems.
         Drivetrain.getInstance().init(hardwareMap);
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
@@ -62,6 +69,7 @@ public class FullTest extends OpMode {
         Transfer.INSTANCE.initialize(hardwareMap);
         Turret.INSTANCE.initialize(hardwareMap);
         Limelight.INSTANCE.initialize(hardwareMap);
+        
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
         telemetry.addLine("Alliance: BLUE (hardcoded)");
         telemetry.update();
@@ -79,6 +87,7 @@ public class FullTest extends OpMode {
         boolean leftTrigger  = gamepad1.left_trigger  > 0.3;
         boolean dpadLeft     = gamepad1.dpad_left;
 
+        // Mode Switching logic.
         if (triangle && !lastTriangle) {
             intakeOn    = true;
             shootMode   = false;
@@ -97,13 +106,13 @@ public class FullTest extends OpMode {
                 Intake.INSTANCE.idle();
                 Turret.INSTANCE.setVelocity(0);
                 Limelight.INSTANCE.stop();
-                Turret.INSTANCE.resetFineTune();
             } else {
                 shootMode = true;
                 Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
             }
         }
 
+        // Manual Flick.
         if (cross && !lastCross && flickState == FlickState.IDLE && transferDown) {
             transferDown = false;
             Transfer.INSTANCE.transferUp();
@@ -111,6 +120,7 @@ public class FullTest extends OpMode {
             flickState = FlickState.WAIT_UP;
         }
 
+        // Flywheel control.
         if (square && !lastSquare) {
             switch (squareState) {
                 case 0:
@@ -140,8 +150,6 @@ public class FullTest extends OpMode {
             if (intakeOn) Intake.INSTANCE.reverse();
             else          Intake.INSTANCE.idle();
         }
-        if (rightTrigger) Turret.INSTANCE.updateAngleOffset(-0.1);
-        if (leftTrigger)  Turret.INSTANCE.updateAngleOffset(0.1);
 
         if (leftBumper  && !lastLeftBumper) {
             Spindexer.Position.next();
@@ -152,11 +160,11 @@ public class FullTest extends OpMode {
             Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition());
         }
 
-        // ── Transfer flick state machine — no jam retry ───────────────────────
+        // ── Transfer flick state machine ──────────────────────────────────────
         switch (flickState) {
             case WAIT_UP:
                 if (flickTimer.seconds() >= 0.5) {
-                    Transfer.INSTANCE.transferDown();
+                    Transfer.INSTANCE.transferDownAggressive();
                     flickTimer.reset();
                     flickState = FlickState.WAIT_DOWN;
                 }
@@ -196,7 +204,6 @@ public class FullTest extends OpMode {
                         shootMode = true;
                         intakeOn  = false;
                         Intake.INSTANCE.idle();
-                        Intake.INSTANCE.idle();
                         Limelight.INSTANCE.start();
                         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
                     } else {
@@ -216,7 +223,6 @@ public class FullTest extends OpMode {
                     squareState = 0;
                     Turret.INSTANCE.setVelocity(0);
                     Limelight.INSTANCE.stop();
-                    Turret.INSTANCE.resetFineTune();
                     Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
                 } else {
                     int filled = Spindexer.INSTANCE.filledPosition();
@@ -232,6 +238,7 @@ public class FullTest extends OpMode {
             targetVelocity = 0;
             Turret.INSTANCE.setHoodPosition(1.0);
         } else {
+            // IMPORTANT: Targeting logic using vision feedback.
             double llDist = Limelight.INSTANCE.distanceFromTag(goalId);
             if (llDist > 0) {
                 targetVelocity = Turret.INSTANCE.distanceToVelocity(llDist, 0, currentAliance);
@@ -255,6 +262,7 @@ public class FullTest extends OpMode {
             squareState = 2;
         }
 
+        // Color sensor rumble feedback.
         Spindexer.DetectedColor detected = intakeOn
                 ? Spindexer.INSTANCE.readCurrentColor() : Spindexer.DetectedColor.EMPTY;
         if      (detected == Spindexer.DetectedColor.GREEN)  gamepad1.rumble(1.0, 0.0, 200);
@@ -262,6 +270,7 @@ public class FullTest extends OpMode {
 
         Turret.INSTANCE.periodic();
 
+        // ── Telemetry ─────────────────────────────────────────────────────────
         double llDistanceTelem = Limelight.INSTANCE.distanceFromTag(goalId);
         telemetry.addLine("── MATCH ────────────────────────────────");
         telemetry.addData("Alliance", "BLUE (hardcoded)");
@@ -275,23 +284,15 @@ public class FullTest extends OpMode {
         telemetry.addData("Hood Position",     hoodPosition);
         telemetry.addLine("── LIMELIGHT ────────────────────────────");
         telemetry.addData("LL Distance", llDistanceTelem > 0 ? llDistanceTelem + " in" : "NOT FOUND");
-        telemetry.addData("Pattern",
-                Limelight.INSTANCE.patternFromObelisk() == Limelight.GPP_PATTERN_ID ? "GPP" :
-                        Limelight.INSTANCE.patternFromObelisk() == Limelight.PGP_PATTERN_ID ? "PGP" :
-                                Limelight.INSTANCE.patternFromObelisk() == Limelight.PPG_PATTERN_ID ? "PPG" : "Not found");
         telemetry.addLine("── TURRET ───────────────────────────────");
         telemetry.addData("Turret Angle",     Turret.INSTANCE.getTurretAngle());
         telemetry.addData("Turret Angle Set", Turret.INSTANCE.getTurretAngleSet());
         telemetry.addLine("── SPINDEXER ────────────────────────────");
         telemetry.addData("Transfer Down",    transferDown);
-        telemetry.addData("Flick State",      flickState);
-        telemetry.addData("Dwell Active",     dwelling);
-        telemetry.addData("Detected Color",   detected);
         telemetry.addData("Ball Pos 1",       Spindexer.INSTANCE.getBallAtPosition()[0]);
         telemetry.addData("Ball Pos 2",       Spindexer.INSTANCE.getBallAtPosition()[1]);
         telemetry.addData("Ball Pos 3",       Spindexer.INSTANCE.getBallAtPosition()[2]);
         telemetry.addData("Current Position", Spindexer.INSTANCE.getPosition());
-        telemetry.addData("Free Position",    Spindexer.INSTANCE.freePosition());
         telemetry.update();
 
         lastCircle      = circle;

@@ -9,6 +9,11 @@ import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
 import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 import org.firstinspires.ftc.teamcode.robot.Spindexer;
 
+/**
+ * Color Sensor Calibration OpMode
+ * IMPORTANT: Use this tool to calibrate the hue ranges in Spindexer.java.
+ * It provides live feedback on what the color sensors are seeing in real-time.
+ */
 @TeleOp(name = "Tune: Color Sensors", group = "Tuning")
 public class SensorColor extends LinearOpMode {
 
@@ -27,6 +32,7 @@ public class SensorColor extends LinearOpMode {
         waitForStart();
 
         while (opModeIsActive()) {
+            // IMPORTANT: Adjust gain to handle different lighting conditions.
             if      (gamepad1.cross)    gainLeft += 0.005;
             else if (gamepad1.triangle && gainLeft  > 1) gainLeft  -= 0.005;
             if      (gamepad1.circle)   gainRight += 0.005;
@@ -37,6 +43,8 @@ public class SensorColor extends LinearOpMode {
 
             NormalizedRGBA colorsLeft  = leftSensor.getNormalizedColors();
             NormalizedRGBA colorsRight = rightSensor.getNormalizedColors();
+            
+            // IMPORTANT: Convert normalized RGBA to HSV for more reliable color matching (Hue).
             Color.colorToHSV(colorsLeft.toColor(),  hsvLeft);
             Color.colorToHSV(colorsRight.toColor(), hsvRight);
 
@@ -56,6 +64,8 @@ public class SensorColor extends LinearOpMode {
 
             telemetry.addLine("── DETECTION ────────────────────────");
             telemetry.addData("Detected", detected);
+            
+            // IMPORTANT: These are the values currently hardcoded in Spindexer.java.
             telemetry.addLine("── RANGES (edit in Spindexer) ───────");
             telemetry.addData("Purple L", Spindexer.plLower + " - " + Spindexer.plUpper);
             telemetry.addData("Green L",  Spindexer.glLower + " - " + Spindexer.glUpper);

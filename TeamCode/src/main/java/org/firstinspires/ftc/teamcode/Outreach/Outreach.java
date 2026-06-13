@@ -7,11 +7,13 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
+import org.firstinspires.ftc.teamcode.Utils.MatchPattern;
 import org.firstinspires.ftc.teamcode.robot.Drivetrain;
 import org.firstinspires.ftc.teamcode.robot.Intake;
 import org.firstinspires.ftc.teamcode.robot.Spindexer;
 import org.firstinspires.ftc.teamcode.robot.Transfer;
 import org.firstinspires.ftc.teamcode.robot.Turret;
+
 
 @TeleOp(name = "Outreach", group = "Eventing")
 @Config
@@ -19,8 +21,6 @@ public class Outreach extends OpMode {
 
     // ── Dashboard-tunable variables ───────────────────────────────────────────
     public static double shootVelocity = 3000;
-    // Spindexer positions are tuned directly via Spindexer's @Config on the dashboard
-
     // ── Shooter state machine ─────────────────────────────────────────────────
     // 0 = off
     // 1 = spinning up (waiting for velo)
@@ -38,6 +38,7 @@ public class Outreach extends OpMode {
         TRANSFER_DOWN,
         MARK_EMPTY
     }
+
     private ShootCycleState shootCycleState = ShootCycleState.IDLE;
     private int shootBallIndex = 0;
     private boolean shootCycleActive = false;
@@ -49,7 +50,8 @@ public class Outreach extends OpMode {
     private final ElapsedTime shootCycleTimer = new ElapsedTime();
 
     // ── Transfer flick state machine (manual single shot) ─────────────────────
-    private enum FlickState { IDLE, WAIT_UP, WAIT_DOWN }
+    private enum FlickState {IDLE, WAIT_UP, WAIT_DOWN}
+
     private FlickState flickState = FlickState.IDLE;
     private final ElapsedTime flickTimer = new ElapsedTime();
     private boolean transferDown = true;
@@ -70,7 +72,7 @@ public class Outreach extends OpMode {
     @Override
     public void init() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
-
+        MatchPattern.reset();
         Drivetrain.getInstance().init(hardwareMap);
         Intake.INSTANCE.init(hardwareMap);
         Spindexer.INSTANCE.initialize(
@@ -83,8 +85,10 @@ public class Outreach extends OpMode {
 
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
         Turret.INSTANCE.setToAngle(-90);
+        MatchPattern.tryDetect();
 
-        telemetry.addLine("Welcome to FTC 6183 Loki!");
+        telemetry.addLine("Welcome to FTC 6183 TripleParadox!");
+        telemetry.addData("Pattern",  MatchPattern.getPattern());
         telemetry.addLine("Triangle=Intake | Square=Rev/Shoot/Off | Cross=Auto Shoot All");
         telemetry.addLine("DPad Left=Kill | DPad Up=3000 | DPad Down=1000");
         telemetry.update();
@@ -92,15 +96,16 @@ public class Outreach extends OpMode {
 
     @Override
     public void loop() {
-        boolean square      = gamepad1.square;
-        boolean triangle    = gamepad1.triangle;
-        boolean circle      = gamepad1.circle;
-        boolean cross       = gamepad1.cross;
-        boolean dpadLeft    = gamepad1.dpad_left;
-        boolean dpadUp      = gamepad1.dpad_up;
-        boolean dpadDown    = gamepad1.dpad_down;
-        boolean leftBumper  = gamepad1.left_bumper;
+        boolean square = gamepad1.square;
+        boolean triangle = gamepad1.triangle;
+        boolean circle = gamepad1.circle;
+        boolean cross = gamepad1.cross;
+        boolean dpadLeft = gamepad1.dpad_left;
+        boolean dpadUp = gamepad1.dpad_up;
+        boolean dpadDown = gamepad1.dpad_down;
+        boolean leftBumper = gamepad1.left_bumper;
         boolean rightBumper = gamepad1.right_bumper;
+        if (!MatchPattern.isLocked()) MatchPattern.tryDetect();
 
         // ── Turret locked at -90 always ───────────────────────────────────────
         Turret.INSTANCE.setToAngle(-90);
@@ -126,10 +131,10 @@ public class Outreach extends OpMode {
 
         // ── Triangle: switch to intake mode ───────────────────────────────────
         if (triangle && !lastTriangle && !shootCycleActive) {
-            intakeOn     = true;
+            intakeOn = true;
             shooterState = 0;
-            hasRumbled   = false;
-            ballsFired   = 0;
+            hasRumbled = false;
+            ballsFired = 0;
             Turret.INSTANCE.setVelocity(0);
             Intake.INSTANCE.on();
             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
@@ -137,9 +142,9 @@ public class Outreach extends OpMode {
 
         // ── Circle: switch to shooter mode / spin up ──────────────────────────
         if (circle && !lastCircle && !shootCycleActive) {
-            intakeOn     = false;
-            hasRumbled   = false;
-            ballsFired   = 0;
+            intakeOn = false;
+            hasRumbled = false;
+            ballsFired = 0;
             Intake.INSTANCE.idle();
             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
             shooterState = 1;
@@ -156,9 +161,9 @@ public class Outreach extends OpMode {
                 case 0:
                     // Rev up
                     shooterState = 1;
-                    hasRumbled   = false;
-                    ballsFired   = 0;
-                    intakeOn     = false;
+                    hasRumbled = false;
+                    ballsFired = 0;
+                    intakeOn = false;
                     Intake.INSTANCE.idle();
                     Turret.INSTANCE.setVelocity(shootVelocity);
                     Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
@@ -170,12 +175,12 @@ public class Outreach extends OpMode {
                     } else if (flickState == FlickState.IDLE && transferDown) {
                         // Fire one ball
                         transferDown = false;
-                        Transfer.INSTANCE.transferUp();
+                        Transfer.INSTANCE.transferUpAggressive();
                         flickTimer.reset();
-                        flickState   = FlickState.WAIT_UP;
+                        flickState = FlickState.WAIT_UP;
                         ballsFired++;
                         shooterState = 1; // re-arm: wait for velo before next shot
-                        hasRumbled   = false;
+                        hasRumbled = false;
                     }
                     break;
                 case 1:
@@ -188,9 +193,9 @@ public class Outreach extends OpMode {
 
         // ── Cross: auto shoot-all-three cycle ─────────────────────────────────
         if (cross && !lastCross && shootCycleState == ShootCycleState.IDLE && !shootCycleActive) {
-            shootBallIndex   = 0;
+            shootBallIndex = 0;
             shootCycleActive = true;
-            intakeOn         = false;
+            intakeOn = false;
             Intake.INSTANCE.idle();
             Turret.INSTANCE.setVelocity(shootVelocity);
             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
@@ -214,7 +219,7 @@ public class Outreach extends OpMode {
         switch (flickState) {
             case WAIT_UP:
                 if (flickTimer.seconds() >= 0.5) {
-                    Transfer.INSTANCE.transferDown();
+                    Transfer.INSTANCE.transferDownAggressive();
                     flickTimer.reset();
                     flickState = FlickState.WAIT_DOWN;
                 }
@@ -226,7 +231,7 @@ public class Outreach extends OpMode {
                             Spindexer.DetectedColor.EMPTY
                     );
                     transferDown = true;
-                    flickState   = FlickState.IDLE;
+                    flickState = FlickState.IDLE;
                 }
                 break;
             default:
@@ -242,14 +247,14 @@ public class Outreach extends OpMode {
                 break;
             case WAIT_POS:
                 if (shootCycleTimer.seconds() >= 0.5) {
-                    Transfer.INSTANCE.transferUp();
+                    Transfer.INSTANCE.transferUpAggressive();
                     shootCycleTimer.reset();
                     shootCycleState = ShootCycleState.TRANSFER_UP;
                 }
                 break;
             case TRANSFER_UP:
                 if (shootCycleTimer.seconds() >= 0.5) {
-                    Transfer.INSTANCE.transferDown();
+                    Transfer.INSTANCE.transferDownAggressive();
                     shootCycleTimer.reset();
                     shootCycleState = ShootCycleState.TRANSFER_DOWN;
                 }
@@ -267,7 +272,7 @@ public class Outreach extends OpMode {
                 shootBallIndex++;
                 if (shootBallIndex >= 3) {
                     shootCycleActive = false;
-                    shootCycleState  = ShootCycleState.IDLE;
+                    shootCycleState = ShootCycleState.IDLE;
                     killEverything();
                 } else {
                     shootCycleState = ShootCycleState.SET_POS;
@@ -327,9 +332,11 @@ public class Outreach extends OpMode {
                         shooterState = 0;
                         Turret.INSTANCE.setVelocity(0);
                     } else {
-                        int filled = Spindexer.INSTANCE.filledPosition();
-                        if (filled != -1) {
-                            Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[filled]);
+                        int next = nextShootSlot();
+                        if (next != -1) {
+                            Spindexer.INSTANCE.setToPosition(
+                                    Spindexer.Position.values()[next]
+                            );
                         }
                     }
                 }
@@ -358,29 +365,32 @@ public class Outreach extends OpMode {
 
         // ── Telemetry ─────────────────────────────────────────────────────────
         telemetry.addLine("Welcome to FTC 6183 Loki!");
-        telemetry.addData("Intake",       intakeOn ? "ON" : "OFF");
+        telemetry.addData("Intake", intakeOn ? "ON" : "OFF");
         telemetry.addData("Flywheel",
                 shooterState == 0 ? "OFF" :
                         shooterState == 1 ? "SPINNING UP..." :
                                 "READY - Press Square! (" + ballsFired + "/3 fired)");
-        telemetry.addData("Velo Target",  shootVelocity);
-        telemetry.addData("Shoot Cycle",  shootCycleActive ? ("Ball " + (shootBallIndex + 1) + "/3") : "IDLE");
-        telemetry.addData("Mode",         Spindexer.INSTANCE.getPositionType());
-        telemetry.addData("Position",     Spindexer.INSTANCE.getPosition());
-        telemetry.addData("Ball 1",       Spindexer.INSTANCE.getBallAtPosition()[0]);
-        telemetry.addData("Ball 2",       Spindexer.INSTANCE.getBallAtPosition()[1]);
-        telemetry.addData("Ball 3",       Spindexer.INSTANCE.getBallAtPosition()[2]);
+        telemetry.addData("Velo Target", shootVelocity);
+        telemetry.addData("Shoot Cycle", shootCycleActive ? ("Ball " + (shootBallIndex + 1) + "/3") : "IDLE");
+        telemetry.addData("Mode", Spindexer.INSTANCE.getPositionType());
+        telemetry.addData("Position", Spindexer.INSTANCE.getPosition());
+        telemetry.addData("Ball 1", Spindexer.INSTANCE.getBallAtPosition()[0]);
+        telemetry.addData("Ball 2", Spindexer.INSTANCE.getBallAtPosition()[1]);
+        telemetry.addData("Ball 3", Spindexer.INSTANCE.getBallAtPosition()[2]);
+        telemetry.addData("Pattern",
+                MatchPattern.getPattern() +
+                        (MatchPattern.isLocked() ? " 🔒" : ""));
         telemetry.update();
 
         // ── Save button state ─────────────────────────────────────────────────
-        lastSquare      = square;
-        lastTriangle    = triangle;
-        lastCircle      = circle;
-        lastCross       = cross;
-        lastDpadLeft    = dpadLeft;
-        lastDpadUp      = dpadUp;
-        lastDpadDown    = dpadDown;
-        lastLeftBumper  = leftBumper;
+        lastSquare = square;
+        lastTriangle = triangle;
+        lastCircle = circle;
+        lastCross = cross;
+        lastDpadLeft = dpadLeft;
+        lastDpadUp = dpadUp;
+        lastDpadDown = dpadDown;
+        lastLeftBumper = leftBumper;
         lastRightBumper = rightBumper;
     }
 
@@ -392,16 +402,58 @@ public class Outreach extends OpMode {
     private void killEverything() {
         Turret.INSTANCE.setVelocity(0);
         Intake.INSTANCE.idle();
-        Transfer.INSTANCE.transferDown();
-        shooterState     = 0;
+        Transfer.INSTANCE.transferDownAggressive();
+        shooterState = 0;
         shootCycleActive = false;
-        shootCycleState  = ShootCycleState.IDLE;
-        flickState       = FlickState.IDLE;
-        hasRumbled       = false;
-        ballsFired       = 0;
-        intakeOn         = false;
-        dwelling         = false;
-        transferDown     = true;
+        shootCycleState = ShootCycleState.IDLE;
+        flickState = FlickState.IDLE;
+        hasRumbled = false;
+        ballsFired = 0;
+        intakeOn = false;
+        dwelling = false;
+        transferDown = true;
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+    }
+
+
+    /**
+     * IMPORTANT: Determines which ball to fire next based on the field pattern.
+     * If the pattern is UNKNOWN, it simply fires the first available ball.
+     */
+    private int nextShootSlot() {
+        Spindexer.DetectedColor[] slots = Spindexer.INSTANCE.getBallAtPosition();
+
+        if (MatchPattern.isLocked()) {
+            Spindexer.DetectedColor[] order;
+            switch (MatchPattern.getPattern()) {
+                case GPP:
+                    order = new Spindexer.DetectedColor[]{Spindexer.DetectedColor.GREEN, Spindexer.DetectedColor.PURPLE, Spindexer.DetectedColor.PURPLE};
+                    break;
+                case PGP:
+                    order = new Spindexer.DetectedColor[]{Spindexer.DetectedColor.PURPLE, Spindexer.DetectedColor.GREEN, Spindexer.DetectedColor.PURPLE};
+                    break;
+                case PPG:
+                    order = new Spindexer.DetectedColor[]{Spindexer.DetectedColor.PURPLE, Spindexer.DetectedColor.PURPLE, Spindexer.DetectedColor.GREEN};
+                    break;
+                default:
+                    order = null;
+                    break;
+            }
+            if (order != null) {
+                int shotCount = 0;
+                for (Spindexer.DetectedColor c : slots)
+                    if (c == Spindexer.DetectedColor.EMPTY) shotCount++;
+                if (shotCount < order.length) {
+                    Spindexer.DetectedColor needed = order[shotCount];
+                    for (int i = 0; i < slots.length; i++)
+                        if (slots[i] == needed) return i;
+                }
+            }
+        }
+
+        for (int i = 0; i < slots.length; i++)
+            if (slots[i] != Spindexer.DetectedColor.EMPTY) return i;
+        return -1;
+
     }
 }

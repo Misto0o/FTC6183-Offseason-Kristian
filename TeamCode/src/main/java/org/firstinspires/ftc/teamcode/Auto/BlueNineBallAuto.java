@@ -11,6 +11,11 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import org.firstinspires.ftc.teamcode.Pedro.Constants;
 
+/**
+ * Blue 9 Ball Autonomous
+ * IMPORTANT: This OpMode uses Pedro Pathing for high-speed movement.
+ * It is structured as a state machine to allow for non-blocking subsystem integration.
+ */
 @Autonomous(name = "Blue 9 Ball Auto", group = "Auto")
 @Configurable
 public class BlueNineBallAuto extends OpMode {
@@ -38,6 +43,7 @@ public class BlueNineBallAuto extends OpMode {
     private boolean waiting = false;
 
     // ── Poses ──────────────────────────────────────────────────────────────
+    // IMPORTANT: Coordinates are in field inches. (0,0) is a corner of the field.
     private final Pose startPose       = new Pose(20.968, 124.944, Math.toRadians(135));
     private final Pose moveBack        = new Pose(47.586, 97.649);
     private final Pose driveToMiddle   = new Pose(47.567, 58.558);
@@ -52,6 +58,7 @@ public class BlueNineBallAuto extends OpMode {
     public void init() {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
+        // IMPORTANT: Initializing the Pedro Pathing follower with project-specific constants.
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(startPose);
 
@@ -75,6 +82,7 @@ public class BlueNineBallAuto extends OpMode {
 
     @Override
     public void loop() {
+        // IMPORTANT: Must call update() every loop to process path following logic.
         follower.update();
         updateStateMachine();
 
@@ -87,11 +95,14 @@ public class BlueNineBallAuto extends OpMode {
     }
 
     // ── State Machine ──────────────────────────────────────────────────────
+    /**
+     * IMPORTANT: Controls the flow of the autonomous period.
+     * Subsystem actions (intake/shoot) should be triggered within these states.
+     */
     private void updateStateMachine() {
         switch (state) {
 
             case MAIN_CHAIN:
-                // waiting for moveback → driveToMiddle → pickup3 to finish
                 if (!follower.isBusy()) {
                     // TODO: trigger intake/shooter here later
                     follower.followPath(chain2);
@@ -125,6 +136,10 @@ public class BlueNineBallAuto extends OpMode {
     }
 
     // ── Path Builder ───────────────────────────────────────────────────────
+    /**
+     * IMPORTANT: Defines the specific paths the robot will follow.
+     * Uses Bezier curves for smooth, continuous motion.
+     */
     private void buildPaths() {
         mainChain = follower.pathBuilder()
                 .addPath(new BezierLine(startPose, moveBack))
@@ -151,6 +166,10 @@ public class BlueNineBallAuto extends OpMode {
     }
 
     // ── Wait Helper ────────────────────────────────────────────────────────
+    /**
+     * IMPORTANT: Non-blocking wait helper. 
+     * Allows the loop to continue running while waiting for a specific duration.
+     */
     private boolean waitFor(double seconds) {
         if (!waiting) {
             waitTimer = System.currentTimeMillis();

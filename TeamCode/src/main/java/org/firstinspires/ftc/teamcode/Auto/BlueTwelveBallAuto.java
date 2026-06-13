@@ -12,6 +12,11 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import org.firstinspires.ftc.teamcode.Pedro.Constants;
 
+/**
+ * Blue 12 Ball Autonomous
+ * IMPORTANT: This is our high-scoring autonomous routine. It uses Bezier curves 
+ * to sweep through rows of balls for maximum efficiency.
+ */
 @Autonomous(name = "Blue 12 Ball Auto", group = "Auto")
 @Configurable
 public class BlueTwelveBallAuto extends OpMode {
@@ -38,6 +43,8 @@ public class BlueTwelveBallAuto extends OpMode {
     private boolean waiting = false;
 
     // ── Poses ──────────────────────────────────────────────────────────────
+    // IMPORTANT: These coordinates were originally sourced from field testing 
+    // and manual adjustment. DO NOT change them without verifying on a physical field.
     private final Pose startPose      = new Pose(24.980, 127.469, Math.toRadians(142));
     private final Pose shootZone      = new Pose(61.531, 84.857);
     private final Pose middleRowEnd   = new Pose(17.837, 59.898);
@@ -63,6 +70,7 @@ public class BlueTwelveBallAuto extends OpMode {
     public void init() {
         panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
 
+        // IMPORTANT: Initializing the Pedro Pathing follower.
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(startPose);
 
@@ -86,6 +94,7 @@ public class BlueTwelveBallAuto extends OpMode {
 
     @Override
     public void loop() {
+        // IMPORTANT: Must call update() every tick to keep the robot moving along the path.
         follower.update();
         updateStateMachine();
 
@@ -98,6 +107,10 @@ public class BlueTwelveBallAuto extends OpMode {
     }
 
     // ── State Machine ──────────────────────────────────────────────────────
+    /**
+     * IMPORTANT: Controls the sequence of the 12-ball autonomous run.
+     * Use the 'waitFor' calls to give subsystems time to cycle (Intake/Spindexer/Turret).
+     */
     private void updateStateMachine() {
         switch (state) {
 
@@ -175,6 +188,10 @@ public class BlueTwelveBallAuto extends OpMode {
     }
 
     // ── Path Builder ───────────────────────────────────────────────────────
+    /**
+     * IMPORTANT: Defines the Bezier paths for the robot.
+     * Curve sweeps (BezierCurve) are specifically used to "vacuum" balls off the ground.
+     */
     private void buildPaths() {
 
         // drive from start to shoot zone, rotating from 142° to 180°
@@ -183,7 +200,7 @@ public class BlueTwelveBallAuto extends OpMode {
                 .setLinearHeadingInterpolation(Math.toRadians(142), Math.toRadians(180))
                 .build();
 
-        // curve sweeps wide through middle row (Cheick's original curve - better than a line)
+        // IMPORTANT: curve sweeps wide through middle row for better ball collection.
         pickupMiddleRow = follower.pathBuilder()
                 .addPath(new BezierCurve(
                         shootZone,
@@ -233,6 +250,10 @@ public class BlueTwelveBallAuto extends OpMode {
     }
 
     // ── Wait Helper ────────────────────────────────────────────────────────
+    /**
+     * IMPORTANT: Non-blocking timer helper. Essential for keeping the Pedro 
+     * follower active while waiting for subsystems to cycle.
+     */
     private boolean waitFor(double seconds) {
         if (!waiting) {
             waitTimer = System.currentTimeMillis();

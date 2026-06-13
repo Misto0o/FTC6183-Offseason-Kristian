@@ -8,247 +8,312 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 import org.firstinspires.ftc.teamcode.Utils.Interpolator;
+import org.firstinspires.ftc.teamcode.Utils.ShooterTablesV2;
 import org.firstinspires.ftc.teamcode.Vision.Limelight;
 import org.firstinspires.ftc.teamcode.Utils.ShooterTables;
 
+/**
+ * Turret Subsystem - SIMPLIFIED
+ * IMPORTANT: Handles the high-speed flywheel, position-controlled rotation, and variable hood.
+ * Uses Bilinear Interpolation to automatically adjust shooter parameters based on robot position.
+ */
 @Config
 public class Turret {
 
-    private Aliance a;
+    // ── Tunable Constants ───────────────────────────────────────────────────
+    // IMPORTANT: maxPower limits turret rotation speed to prevent overshoot/oscillation.
+    public static double maxPower        = 0.4;
+    // turretOffSet maps the raw analog voltage (0-3.3V) to a 0-360 degree physical orientation.
+    public static double turretOffSet    = 340; // DO NOT TOUCH unless needs to be re-calibrated
+    // threshold defines the "acceptable" velocity error for the flywheels in ticks per second.
+    public static double threshold       = 15;
+    public static double turretKp        = 0.02;
+    public static double turretKd        = 0.005;
 
-    // --- Tunable via dashboard ---
-    public static double maxPower = 0.45;
-    public static double turretOffSet = 250;
-    public static double threshold = 30;
-    public static double RED_GOAL_X = 144;
-    public static double RED_GOAL_Y = 144;
+    public static double TURRET_PARKED_ANGLE = 270.0;
+
+    // ── Goal Field Coordinates ────────────────────────────────────────────────
+
     public static double BLUE_GOAL_X = 0;
     public static double BLUE_GOAL_Y = 144;
+    public static double RED_GOAL_X = 144;
+    public static double RED_GOAL_Y = 144;
+    //public static double BLUE_GOAL_X = 27,   BLUE_GOAL_Y = 124; // For testing
+    //public static double RED_GOAL_X  = 121, RED_GOAL_Y  = 121;  // Fall Back incase new ones dont work
 
-    public static double turretKp = 0.01;
-    public static double turretKd = 0.001;
+    // ── Debug flag ────────────────────────────────────────────────────────────
+    public static boolean DEBUG_AIM = false;
 
-    public static double fineTuneThresholdDeg = 5.0;
-    public static double fineTuneBangBangDeg = 0.5;
-    public static double fineTuneNudge = 0.05;
-    public boolean fineTuneActive = false;
+    // ── Internal State ────────────────────────────────────────────────────────
+    public static double turretVelocity   = 0;
+    private double turretAngleSet         = 0;
+    private double lastTurretError        = 0;
+    private double shooterPower           = 0;
+    private double hoodPositionTarget     = 1.0;
+    private long lastDebugTime            = 0;
 
-    // Shooter velocity target
-    public static double turretVelocity = 0;
 
-    // --- Internal state ---
-    private double angleOffset = 0;
-    private double currentGoal = -1;
-    private double lastTurretError = 0;
-    private double shooterPower = 0;
+    // ── Singleton Instance ───────────────────────────────────────────────────
+    public static final Turret INSTANCE = new Turret();
+    private Turret() {}
 
-    private double turretAngleSet = 0;
-    private double turretPowerSet = 0;
-    private double hoodPositionSet = 0;
-
-    public static final Turret INSTANCE = new Turret(Aliance.BLUE);
-
-    private Turret(Aliance a) {
-        this.a = a;
-    }
-
-    // --- Interpolators ---
+    // ── Interpolators (Lookup Tables) ─────────────────────────────────────────
+    // IMPORTANT: These store pre-tuned values for RPM and Hood angle indexed by X,Y coords.
     private final Interpolator shooterBlue = new Interpolator();
-    private final Interpolator hoodBlue = new Interpolator();
-    private final Interpolator shooterRed = new Interpolator();
-    private final Interpolator hoodRed = new Interpolator();
+    private final Interpolator hoodBlue    = new Interpolator();
+    private final Interpolator shooterRed  = new Interpolator();
+    private final Interpolator hoodRed     = new Interpolator();
 
-    // --- Hardware ---
-    private DcMotorEx shooterMotor1, shooterMotor2;
-    private DcMotor turret;
-    private Servo hoodServo;
+    // ── Hardware Members ──────────────────────────────────────────────────────
+    private DcMotorEx   shooterMotor1, shooterMotor2;
+    private DcMotor     turret;
+    private Servo       hoodServo;
     private AnalogInput turretEncoder;
 
-    // -------------------------------------------------------------------------
-    // Init
-    // -------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Initialization
+    // ─────────────────────────────────────────────────────────────────────────
     public void initialize(HardwareMap hardwareMap) {
-        shooterMotor1 = hardwareMap.get(DcMotorEx.class, "shoot1");
-        shooterMotor2 = hardwareMap.get(DcMotorEx.class, "shoot2");
-        turret = hardwareMap.get(DcMotor.class, "turret");
-        hoodServo = hardwareMap.get(Servo.class, "hood");
+        shooterMotor1 = hardwareMap.get(DcMotorEx.class,   "shoot1");
+        shooterMotor2 = hardwareMap.get(DcMotorEx.class,   "shoot2");
+        turret        = hardwareMap.get(DcMotor.class,     "turret");
+        hoodServo     = hardwareMap.get(Servo.class,       "hood");
         turretEncoder = hardwareMap.get(AnalogInput.class, "turretEncoder");
 
+        // IMPORTANT: Motors set to FLOAT so they can coast down naturally without gear strain.
         shooterMotor1.setPower(0);
         shooterMotor2.setPower(0);
         shooterMotor1.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
         shooterMotor2.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.FLOAT);
-        turret.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        ShooterTables.loadBlueShooter(shooterBlue);
-        ShooterTables.loadBlueHood(hoodBlue);
-        ShooterTables.loadRedShooter(shooterRed);
-        ShooterTables.loadRedHood(hoodRed);
+        turret.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        calibrateToParkedPosition();
+
+        // Populate lookup tables from ShooterTables utility.
+        ShooterTablesV2.loadBlueShooter(shooterBlue);
+        ShooterTablesV2.loadBlueHood(hoodBlue);
+        ShooterTablesV2.loadRedShooter(shooterRed);
+        ShooterTablesV2.loadRedHood(hoodRed);
     }
 
-    // -------------------------------------------------------------------------
-    // Shooter control
-    // -------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Flywheel Control
+    // ─────────────────────────────────────────────────────────────────────────
+    public void setVelocity(double v) { turretVelocity = v; }
 
     /**
-     * Spin up to -1000 ticks/sec (negative = correct motor direction).
+     * @return Current absolute velocity of the flywheel (ticks/sec).
      */
-    public void setVelocity(double velocity) {
-        turretVelocity = velocity;
-    }
-
     public double getVelocity() {
-        if (shooterMotor1 == null) return 0;
-        return Math.abs(shooterMotor1.getVelocity());
+        return shooterMotor1 == null ? 0 : Math.abs(shooterMotor1.getVelocity());
     }
 
-    public void aimAtGoal(Aliance aliance, int goalId) {
-        double turretError = Math.abs(getTurretAngle() - getTurretAngleSet());
+    /**
+     * IMPORTANT: Used by TeleOp to signal when it's safe to fire.
+     * Both the turret must be on target and the flywheel at the requested RPM.
+     */
+    public boolean isSettled() {
+        return turretVelocity > 0
+                && getVelocity() >= turretVelocity - threshold;
+    }
 
-        if (!fineTuneActive) {
-            followGoalOdometryPositional(aliance);
-            if (turretError <= fineTuneThresholdDeg) {
-                fineTuneActive = true;
-            }
-        } else {
-            double tx = Limelight.INSTANCE.getTx(goalId);
-            if (tx == 0) {
-                followGoalOdometryPositional(aliance);
-            } else if (turretError < 2.0 && Math.abs(tx) > fineTuneBangBangDeg) {
-                updateAngleOffset(tx > 0 ? -fineTuneNudge : fineTuneNudge);
-            }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Goal Targeting Logic - SIMPLIFIED
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Directly aims the turret at the goal.
+     *
+     * The key insight: turret angle = (goal angle in field) - (robot heading in field)
+     * That's it. No confusing intermediate variables.
+     *
+     * @param aliance Which alliance (BLUE or RED) to determine goal location
+     * @param goalId The AprilTag ID - not used, kept for compatibility
+     */
+    public void aimAtGoal(Aliance aliance, int goalId) {
+        double goalX = (aliance == Aliance.BLUE) ? BLUE_GOAL_X : RED_GOAL_X;
+        double goalY = (aliance == Aliance.BLUE) ? BLUE_GOAL_Y : RED_GOAL_Y;
+        double robotX = Pinpoint.INSTANCE.getPosX();
+        double robotY = Pinpoint.INSTANCE.getPosY();
+        double robotHeading = Pinpoint.INSTANCE.getHeading();
+
+        // FIX: Try negating the heading
+        // robotHeading = -robotHeading;  // Uncomment this line
+
+        // Normalize to [0, 360)
+        robotHeading = normalizeAngle360(robotHeading);
+
+        double deltaX = goalX - robotX;
+        double deltaY = goalY - robotY;
+        double angleToGoal = Math.toDegrees(Math.atan2(deltaY, deltaX));
+        angleToGoal = normalizeAngle360(angleToGoal);
+
+        // Calculate turret angle
+        double turretAngle = angleToGoal - robotHeading + 270;
+        turretAngle = normalizeAngle360(turretAngle);
+        turretAngle = Math.max(180, Math.min(360, turretAngle));
+        setToAngle(turretAngle);
+    }
+    /**
+     * Normalizes any angle to the range [-180, 180].
+     * This ensures we always take the shortest path to the target.
+     */
+    private double normalizeAngle(double angle) {
+        while (angle > 180) {
+            angle -= 360;
+        }
+        while (angle < -180) {
+            angle += 360;
+        }
+        return angle;
+    }
+
+    /**
+     * Normalizes any angle to the range [0, 360].
+     * Use this when you need positive angles only.
+     */
+    private double normalizeAngle360(double angle) {
+        return ((angle % 360) + 360) % 360;
+    }
+
+    public void zeroAngleOffset() {
+        // If you need to adjust aiming, use Pinpoint's initial position instead
+        // angleOffset is removed - adjust turretOffSet instead
+    }
+
+    public void calibrateToParkedPosition() {
+        if (turretEncoder != null) {
+            double rawAngle = (turretEncoder.getVoltage() / 3.3) * 360;
+            turretOffSet = rawAngle - TURRET_PARKED_ANGLE;
         }
     }
 
-    public void resetFineTune() {
-        fineTuneActive = false;
-        Limelight.INSTANCE.stop();
+    public void calibrateTurretZero() {
+        // Call this once when turret is physically at 0° (facing robot front)
+        if (turretEncoder != null) {
+            turretOffSet = (turretEncoder.getVoltage() / 3.3) * 360;
+        }
     }
 
-    // -------------------------------------------------------------------------
-    // Hood control
-    // -------------------------------------------------------------------------
-    public void setHoodPosition(double position) {
-        hoodPositionSet = position;
-        if (hoodServo != null) hoodServo.setPosition(position);
+    // ─────────────────────────────────────────────────────────────────────────
+    // Lookup Table Interface
+    // ─────────────────────────────────────────────────────────────────────────
+    public double distanceToVelocity(double x, double y, Aliance aliance) {
+        if (aliance == Aliance.BLUE) return shooterBlue.get(x, y);
+        if (aliance == Aliance.RED)  return shooterRed.get(x, y);
+        return 0;
+    }
+
+    public double distanceToPosition(double x, double y, Aliance aliance) {
+        if (aliance == Aliance.BLUE) return hoodBlue.get(x, y);
+        if (aliance == Aliance.RED)  return hoodRed.get(x, y);
+        return hoodBlue.get(x, y);
+    }
+
+    public double getHoodServoActualPosition() {
+        return hoodServo != null ? hoodServo.getPosition() : -1;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Hood Control
+    // ─────────────────────────────────────────────────────────────────────────
+    public void setHoodPosition(double pos) {
+        // Clamp hood position to [0.0, 1.0] servo range
+        hoodPositionTarget = Math.max(0.0, Math.min(1.0, pos));
     }
 
     public double getPosition() {
-        return hoodPositionSet;
+        return hoodPositionTarget;
     }
 
-    // -------------------------------------------------------------------------
-    // Turret angle control
-    // -------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Turret Position Control
+    // ─────────────────────────────────────────────────────────────────────────
     public void setToAngle(double angle) {
-        turretAngleSet = angle;
+        // Clamp to [0, 360] to respect physical limits
+        turretAngleSet = Math.max(180, Math.min(360, angle));
     }
 
     public double getTurretAngleSet() {
         return turretAngleSet;
     }
 
-    // -------------------------------------------------------------------------
-    // Encoder reading
-    // -------------------------------------------------------------------------
+    /**
+     * IMPORTANT: Maps raw analog encoder voltage to degrees [0, 360].
+     * Ensure turretOffSet is properly calibrated - this is crucial!
+     *
+     * turretOffSet should be the voltage reading when turret is at 0°.
+     * Adjust until getTurretAngle() returns 0 when physically at 0°.
+     */
     public double getTurretAngle() {
         if (turretEncoder == null) return 0;
-        return ((((turretEncoder.getVoltage() / 3.3) * 360) - turretOffSet) % 360 + 360) % 360;
+
+        // Convert voltage (0-3.3V) to angle (0-360°)
+        double angle = ((turretEncoder.getVoltage() / 3.3) * 360) - turretOffSet;
+
+        // Normalize to [0, 360]
+        return normalizeAngle360(angle);
     }
-
-
-    // -------------------------------------------------------------------------
-    // Lookup tables
-    // -------------------------------------------------------------------------
-    public double distanceToVelocity(double x, double y, Aliance aliance) {
-        if (aliance == Aliance.BLUE) return shooterBlue.get(x, y);
-        if (aliance == Aliance.RED) return shooterRed.get(x, y);
-        return 0;
-    }
-
-    public double distanceToPosition(double x, double y, Aliance aliance) {
-        if (aliance == Aliance.BLUE) return hoodBlue.get(x, y);
-        if (aliance == Aliance.RED) return hoodRed.get(x, y);
-        return hoodBlue.get(x, y);
-    }
-
-    // -------------------------------------------------------------------------
-    // Heading helpers
-    // -------------------------------------------------------------------------
-    public double headingToTurretPositionPinpoint(Aliance aliance) {
-        double goalX = (aliance == Aliance.BLUE) ? BLUE_GOAL_X : RED_GOAL_X;
-        double goalY = (aliance == Aliance.BLUE) ? BLUE_GOAL_Y : RED_GOAL_Y;
-        double deltaX = goalX - Pinpoint.INSTANCE.getPosX();
-        double deltaY = goalY - Pinpoint.INSTANCE.getPosY();
-        return Math.toDegrees(Math.atan2(deltaY, deltaX));
-    }
-
-    // -------------------------------------------------------------------------
-    // Goal tracking (replaces followGoalOdometryPositional Command)
-    // -------------------------------------------------------------------------
 
     /**
-     * Call this every loop tick to keep the turret pointed at the goal.
-     * Equivalent to the old followGoalOdometryPositional(aliance, offset) Command.
+     * DEBUG: Return raw encoder voltage for calibration.
      */
-    public void followGoalOdometryPositional(Aliance aliance) {
-        double robotHeading = ((Pinpoint.INSTANCE.getHeading() % 360) + 360) % 360;
-        double targetAngle = headingToTurretPositionPinpoint(aliance);
-        double turretAngle = targetAngle + 90 - robotHeading + angleOffset;
-        turretAngle = ((turretAngle % 360) + 360) % 360;
-        currentGoal = turretAngle;
-
-        // Clamp to physical turret limits (center=270°, ±90° travel = 180° to 360°)
-        currentGoal = Math.max(180, Math.min(360, currentGoal));
-
-        setToAngle(currentGoal);
+    public double getEncoderVoltage() {
+        return turretEncoder == null ? 0 : turretEncoder.getVoltage();
     }
 
-    // -------------------------------------------------------------------------
-    // Angle offset helpers
-    // -------------------------------------------------------------------------
-    public void updateAngleOffset(double angleDifference) {
-        angleOffset += angleDifference;
+    /**
+     * DEBUG: Return the current turretOffSet value.
+     */
+    public double getTurretOffSet() {
+        return turretOffSet;
     }
 
-    public void zeroAngleOffset() {
-        angleOffset = 0;
-    }
-
-    // -------------------------------------------------------------------------
-    // Periodic — call every loop tick
-    // -------------------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────────
+    // Periodic Update (Runs Every Loop)
+    // ─────────────────────────────────────────────────────────────────────────
     public void periodic() {
-        // --- Bang-bang shooter velocity control with deadband ---
-        // Holds current power within the deadband to prevent oscillation.
+        // ── Flywheel Bang-Bang Control ──
+        // IMPORTANT: Bang-Bang control for flywheel velocity.
+        // It provides the fastest possible recovery time compared to traditional PID.
         if (shooterMotor1 != null) {
             if (turretVelocity == 0) {
                 shooterPower = 0;
-            } else {
-                double velocityError = turretVelocity - getVelocity();
-                if (velocityError > threshold) {
-                    shooterPower = 1;       // too slow, push harder
-                } else if (velocityError < -threshold) {
-                    shooterPower = 0;       // overshot, cut power
-                }
-                // within deadband — hold current power (no flip-flopping)
+            } else if (getVelocity() < turretVelocity - threshold) {
+                shooterPower = 1; // Full power until we hit the threshold.
+            } else if (getVelocity() > turretVelocity + threshold) {
+                shooterPower = 0; // Cut power if we overshot.
             }
+            // shooterMotor1 and shooterMotor2 are physically opposite on the shooter assembly.
             shooterMotor1.setPower(-shooterPower);
             shooterMotor2.setPower(shooterPower);
         }
 
-        // --- Turret PD position control ---
+        // ── Turret Rotation PD Control ──
+        // IMPORTANT: PD control for turret rotation with shortest-path error calculation.
+        // Derivative (Kd) helps prevent oscillation as we approach the target angle.
+
         double currentAngle = getTurretAngle();
-        double error = turretAngleSet - currentAngle;
-        error = ((error + 180) % 360 + 360) % 360 - 180;
+        double targetAngle = getTurretAngleSet();
+
+        // Calculate shortest-path error
+        double error = targetAngle - currentAngle;
+        error = normalizeAngle(error); // Maps to [-180, 180]
 
         double derivative = error - lastTurretError;
         lastTurretError = error;
 
-        double rawPower = (turretKp * error) + (turretKd * derivative);
-        turretPowerSet = Math.max(-maxPower, Math.min(maxPower, rawPower));
+        // PD control with maxPower limit
+        double power = turretKp * error + turretKd * derivative;
+        power = Math.max(-maxPower, Math.min(maxPower, power));
 
-        if (turret != null) turret.setPower(turretPowerSet);
+        if (turret != null) {
+            turret.setPower(power);
+        }
+
+        // ── Hood Servo Control ──
+        if (hoodServo != null) {
+            hoodServo.setPosition(hoodPositionTarget);
+        }
     }
-
 }

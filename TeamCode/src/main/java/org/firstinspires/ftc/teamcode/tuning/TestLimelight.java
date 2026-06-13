@@ -10,6 +10,11 @@ import org.firstinspires.ftc.teamcode.Vision.Limelight;
 
 import java.util.List;
 
+/**
+ * TestLimelight OpMode
+ * IMPORTANT: Use this tool to verify that the Limelight 3A can see AprilTags and correct IDs.
+ * If the robot fails to track the goal, check the raw fiducial IDs displayed here.
+ */
 @TeleOp(name = "TestLimelight", group = "Tuning")
 public class TestLimelight extends OpMode {
 
@@ -21,6 +26,7 @@ public class TestLimelight extends OpMode {
 
     @Override
     public void loop() {
+        // Allows the robot to move while testing visibility from different angles.
         Drivetrain.getInstance().drive(
                 -gamepad1.left_stick_y,
                 gamepad1.left_stick_x,
@@ -39,8 +45,7 @@ public class TestLimelight extends OpMode {
                         pattern == Limelight.PPG_PATTERN_ID ? "PPG" : "NOT FOUND (" + pattern + ")");
 
         // ── Raw debug — shows EVERY fiducial the Limelight currently sees ─────
-        // This is the key section: if the motif is visible but not matching,
-        // you'll see the actual IDs here so we know what to fix.
+        // IMPORTANT: If the motif is visible but not matching, check the actual IDs here.
         telemetry.addLine("── RAW FIDUCIALS (all seen) ─────────────");
         LLResult raw = Limelight.INSTANCE.getRawResult();
         if (raw == null) {
@@ -64,6 +69,7 @@ public class TestLimelight extends OpMode {
 
     @Override
     public void stop() {
+        // Stop the Limelight when the OpMode is ended.
         Limelight.INSTANCE.stop();
     }
 }

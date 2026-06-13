@@ -14,10 +14,16 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
-
+/**
+ * Pedro Pathing Constants
+ * IMPORTANT: This file contains the master tuning values for the robot's movement.
+ * Do not change these unless you are performing a full re-tune of the follower.
+ */
 public class Constants {
+    
+    // IMPORTANT: Physical and PID constants for the path follower.
     public static FollowerConstants followerConstants = new FollowerConstants()
-            .mass(35)
+            .mass(35) // kg
             .forwardZeroPowerAcceleration(-43.18)
             .lateralZeroPowerAcceleration(-64)
             .translationalPIDFCoefficients(new PIDFCoefficients(0.175,0,0.01,0.03))
@@ -25,7 +31,7 @@ public class Constants {
             .drivePIDFCoefficients(new FilteredPIDFCoefficients(0.0025,0,0.00001,0.6,0.01))
             .centripetalScaling(0.03);
 
-
+    // IMPORTANT: Drive motor assignments and directions for the mecanum drivetrain.
     public static MecanumConstants driveConstants = new MecanumConstants()
             .maxPower(1)
             .xVelocity(72)
@@ -39,6 +45,8 @@ public class Constants {
             .rightRearMotorDirection(DcMotorSimple.Direction.FORWARD)
             .leftRearMotorDirection(DcMotorSimple.Direction.FORWARD);
 
+    // IMPORTANT: Localization constants for the Pinpoint computer.
+    // Pod offsets are in inches relative to the center of rotation.
     public static PinpointConstants localizerConstants = new PinpointConstants()
             .forwardPodY(-7.125)
             .strafePodX(4.5)
@@ -48,8 +56,12 @@ public class Constants {
             .forwardEncoderDirection(GoBildaPinpointDriver.EncoderDirection.FORWARD)
             .strafeEncoderDirection(GoBildaPinpointDriver.EncoderDirection.REVERSED);
 
+    // Constraints that define the speed and acceleration limits of the paths.
     public static PathConstraints pathConstraints = new PathConstraints(0.99, 100, 2, 1);
 
+    /**
+     * IMPORTANT: Factory method to create a pre-configured Follower instance.
+     */
     public static Follower createFollower(HardwareMap hardwareMap) {
         return new FollowerBuilder(followerConstants, hardwareMap)
                 .pinpointLocalizer(localizerConstants)

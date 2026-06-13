@@ -1,7 +1,7 @@
-# FTC 6183 Loki — Robot Recode 🤖🔥
+# FTC 6183 Triple Paradox Loki — Robot Recode 🤖🔥
 
-This repository contains the fully refactored robot software for FTC Team 6183 Loki.
-Over the course of this offseason, the entire codebase was rebuilt from the ground up — removing a third-party command framework, fixing bugs, and rewriting every subsystem in clean, plain FTC SDK code.
+This repository contains the fully refactored robot software for FTC Team 6183 Triple Paradox getting ready for the  Loki.
+event. Over the course of this offseason, the entire codebase was rebuilt from the ground up — removing a third-party command framework, fixing bugs, and rewriting every subsystem in clean, plain FTC SDK code.
 
 ---
 
@@ -96,7 +96,7 @@ Every subsystem now has its own README with a quickstart explanation, hardware n
 - Hardware: `spinServo`, `leftColorSensor`, `rightColorSensor`
 - **Servo positions**: Intake (0.22, 0.51, 0.8) and Shoot (0.665, 0.08, 0.37)
 - Color detection via HSV thresholds, tunable on FTC Dashboard
-- Both slot-stamping and empty/full flag bugs fixed 
+- Both slot-stamping and empty/full flag bugs fixed
 
 #### `Turret.java`
 - Flywheel shooter (2× DcMotorEx), turret rotation (DcMotor), hood servo, analog encoder
@@ -144,7 +144,7 @@ Every subsystem now has its own README with a quickstart explanation, hardware n
 Full competition driver-controlled period. Alliance hardcoded Blue (Red support present). Pattern detected during init, locked at match start. Full color-matched shoot sequencing, auto-spindexing with dwell, jam retry, Limelight + Pinpoint turret aim.
 
 ### Autonomous (`org.firstinspires.ftc.teamcode.Auto`)
-3 Autonomous pathings to be tuned and worked on next updates. 
+3 Autonomous pathings to be tuned and worked on next updates.
 
 ## Pedro Pathing (`org.firstinspires.ftc.teamcode.Pedro`)
 
