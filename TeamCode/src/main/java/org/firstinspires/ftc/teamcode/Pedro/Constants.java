@@ -43,7 +43,7 @@ public class Constants {
             .rightFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
             .leftFrontMotorDirection(DcMotorSimple.Direction.REVERSE)
             .rightRearMotorDirection(DcMotorSimple.Direction.FORWARD)
-            .leftRearMotorDirection(DcMotorSimple.Direction.FORWARD);
+            .leftRearMotorDirection(DcMotorSimple.Direction.REVERSE); // Match DT if breaks go back to Reverse
 
     // IMPORTANT: Localization constants for the Pinpoint computer.
     // Pod offsets are in inches relative to the center of rotation.

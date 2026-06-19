@@ -33,11 +33,6 @@ public class TestPinpoint extends LinearOpMode {
             double rx =  gamepad1.right_stick_x;
             drivetrain.drive(y, x, rx);
 
-            // Manual reset — press A to zero position and IMU
-            if (gamepad1.a) {
-                pinpoint.resetPosAndIMU(); // expose this or call through INSTANCE
-            }
-
             double posX    = pinpoint.getPosX();
             double posY    = pinpoint.getPosY();
             double heading = pinpoint.getHeading();

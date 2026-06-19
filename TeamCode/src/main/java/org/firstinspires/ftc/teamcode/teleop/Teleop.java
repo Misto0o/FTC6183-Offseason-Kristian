@@ -12,7 +12,6 @@ import com.qualcomm.robotcore.util.ElapsedTime;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D;
-import org.firstinspires.ftc.teamcode.Outreach.Outreach;
 import org.firstinspires.ftc.teamcode.robot.Drivetrain;
 import org.firstinspires.ftc.teamcode.robot.Intake;
 import org.firstinspires.ftc.teamcode.robot.Pinpoint;
@@ -69,7 +68,10 @@ public class Teleop extends OpMode {
     private final ElapsedTime flickTimer = new ElapsedTime();
 
     // ── Auto-shoot state machine ──────────────────────────────────────────────
-    private enum ShootState { IDLE, CONFIRM, REFIRE_WAIT, NEXT_BALL }
+    // CHANGED: Added WAIT_FLYWHEEL state so each ball waits for flywheelState==2
+    // before firing. This matches Outreach's behaviour and prevents the "shot too
+    // fast" jam where the next ball fired before the wheel had recovered speed.
+    private enum ShootState { IDLE, WAIT_FLYWHEEL, CONFIRM, REFIRE_WAIT, NEXT_BALL }
     private ShootState shootState = ShootState.IDLE;
     private final ElapsedTime shootTimer = new ElapsedTime();
 
@@ -122,24 +124,39 @@ public class Teleop extends OpMode {
 
     @Override
     public void init_loop() {
-        // IMPORTANT: Use this time to select alliance and detect the field pattern.
         boolean du = gamepad1.dpad_up, dd = gamepad1.dpad_down;
         if (du && !lastDU) alliance = Aliance.BLUE;
         if (dd && !lastDD) alliance = Aliance.RED;
         lastDU = du; lastDD = dd;
 
         MatchPattern.tryDetect();
-        // IMPORTANT Must swing the turret to the intake position before attempting to calibrate.
-        // Hold X to calibrate turret to current position as parked
+
         if (gamepad1.cross) {
             Turret.INSTANCE.calibrateToParkedPosition();
-            gamepad1.rumbleBlips(2); // confirms it took
+            gamepad1.rumbleBlips(2);
+        }
+
+        // Auto-set position from MT2 if tag is visible
+        Limelight.INSTANCE.setRobotOrientation(Pinpoint.INSTANCE.getHeading());
+        double[] mt2 = Limelight.INSTANCE.getMegaTagPose();
+        if (mt2 != null) {
+            Pinpoint.INSTANCE.updatePosition(new Pose2D(
+                    DistanceUnit.INCH, mt2[0], mt2[1],
+                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
+            telemetry.addData("Start Pos (MT2)", String.format("(%.1f, %.1f)", mt2[0], mt2[1]));
+        } else {
+            // Fall back to alliance corner if no tag visible
+            double fallbackX = (alliance == Aliance.BLUE) ? 135.5 : 8.5;
+            Pinpoint.INSTANCE.updatePosition(new Pose2D(
+                    DistanceUnit.INCH, fallbackX, 9,
+                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
+            telemetry.addData("Start Pos (fallback)", String.format("(%.1f, 9)", fallbackX));
         }
 
         telemetry.addData("Alliance", alliance);
         telemetry.addData("Pattern", MatchPattern.getPattern());
         telemetry.addLine("Hold ✕ with turret facing FRONT to recalibrate");
-        telemetry.addData("Turret Angle", Turret.INSTANCE.getTurretAngle()); // live feedback
+        telemetry.addData("Turret Angle", Turret.INSTANCE.getTurretAngle());
         telemetry.update();
     }
 
@@ -150,12 +167,6 @@ public class Teleop extends OpMode {
     public void start() {
         MatchPattern.reset();
         Turret.INSTANCE.setToAngle(Turret.TURRET_PARKED_ANGLE);
-
-        // IMPORTANT: Set initial field position based on selected alliance.
-        Pinpoint.INSTANCE.updatePosition(alliance == Aliance.BLUE
-                ? new Pose2D(DistanceUnit.INCH, 135.5, 9, AngleUnit.DEGREES, 0)
-                : new Pose2D(DistanceUnit.INCH, 8.5,   9, AngleUnit.DEGREES, 180));
-
         // IMPORTANT: Perform a pre-match scan of the spindexer to identify pre-loaded balls.
         for (Spindexer.Position pos : Spindexer.Position.values()) {
             Spindexer.INSTANCE.setToPosition(pos);
@@ -179,6 +190,7 @@ public class Teleop extends OpMode {
         Pinpoint.INSTANCE.periodic();
         if (!MatchPattern.isLocked()) MatchPattern.tryDetect();
         Limelight.INSTANCE.setRobotOrientation(Pinpoint.INSTANCE.getHeading());
+
         // ── Read inputs ───────────────────────────────────────────────────────
         boolean triangle = gamepad1.triangle;
         boolean circle   = gamepad1.circle;
@@ -205,28 +217,38 @@ public class Teleop extends OpMode {
             turretLock = false;
         }
 
-        // ── TRIANGLE: intake toggle / rescan ──────────────────────────────────
+        // ── TRIANGLE: intake toggle / misread recovery ────────────────────────
+        // CHANGED: Replaced the old full-rescan path with Outreach-style instant
+        // recovery. Whether we were shooting or intaking, Triangle always drops us
+        // into intake mode pointing at the next free slot with the intake running.
+        // There is no longer a manual rescan cycle — the dwell loop already
+        // handles re-reading a slot after the spindexer moves.
         if (triangle && !lastTriangle) {
-            if (mode == RobotMode.SHOOT) {
-                // Switch back to intake
+            // Cancel any active shoot or flick cycle first
+            shootState = ShootState.IDLE;
+            flickState = FlickState.IDLE;
+            transferDown = true;
+            Transfer.INSTANCE.transferDownAggressive();
+
+            // reset dwell so sensor re-confirms the new slot
+            if (!intakeRunning) {
+                // Start / restart intake: switch to intake mode and find first free slot.
+                // enterIntakeMode() already points the spindexer at a free slot.
                 enterIntakeMode();
-            } else if (!intakeRunning) {
-                // Start intake
                 intakeRunning = true;
                 Intake.INSTANCE.on();
-                int free = Spindexer.INSTANCE.freePosition();
-                if (free != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
             } else {
-                // Intake already running — rescan all slots then resume
-                intakeRunning = false;
-                dwelling = false;
-                Intake.INSTANCE.idle();
-                rescanIndex = 0;
-                rescanState = RescanState.MOVING;
-                Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
-                Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[0]);
-                rescanTimer.reset();
+                // Intake already running (misread recovery or mode switch from shoot).
+                // Just re-sync the spindexer to the next free slot and keep rolling.
+                // IMPORTANT: This is the key Outreach behaviour — no full rescan,
+                // just swing to the free slot and the dwell loop takes care of the rest.
+                int free = Spindexer.INSTANCE.freePosition();
+                if (free != -1) {
+                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+                    Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
+                }
             }
+            dwelling = false; // let dwell timer start fresh on next loop tick
         }
 
         // ── SQUARE: flywheel on/off toggle ────────────────────────────────────
@@ -248,15 +270,18 @@ public class Teleop extends OpMode {
         }
 
         // ── Cross: auto shoot-all-three cycle ─────────────────────────────────
+        // CHANGED: Now starts in WAIT_FLYWHEEL instead of immediately firing.
+        // The auto-shoot state machine will wait until flywheelState==2 before
+        // the first shot, and re-wait after each ball. This eliminates the
+        // "too fast" misfires from the old version.
         if (cross && !lastCross
                 && mode == RobotMode.SHOOT
-                && flywheelState == 2
+                && flywheelState > 0          // flywheel must at least be spinning
                 && shootState == ShootState.IDLE
                 && flickState == FlickState.IDLE) {
 
             shootTimer.reset();
-            shootState = ShootState.CONFIRM;
-            triggerFlick();
+            shootState = ShootState.WAIT_FLYWHEEL; // gate on flywheel before first shot
         }
 
         // ── DPad UP: reset odometry to corner ────────────────────────────────
@@ -266,9 +291,6 @@ public class Teleop extends OpMode {
                     ? new Pose2D(DistanceUnit.INCH, 135.5, 9, AngleUnit.DEGREES, 0)
                     : new Pose2D(DistanceUnit.INCH, 8.5,   9, AngleUnit.DEGREES, 180));
             Turret.INSTANCE.zeroAngleOffset();
-        }
-        if (dd && !lastDD) {
-            Turret.INSTANCE.zeroAngleOffset(); // offset only, no odometry change
         }
 
         if (dd && !lastDD) {
@@ -303,13 +325,13 @@ public class Teleop extends OpMode {
 
         // ── Bumpers: manual spindexer step ────────────────────────────────────
         if (lb && !lastLB) { Spindexer.Position.next();     Spindexer.INSTANCE.setToPosition(Spindexer.INSTANCE.getPosition()); }
-        if (rb && !lastRB) { Spindexer.Position.previous(); Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[rb ? 1 : 0]); } // Fix typo in original
+        if (rb && !lastRB) { Spindexer.Position.previous(); Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[rb ? 1 : 0]); }
 
         // ─────────────────────────────────────────────────────────────────────
         // STATE MACHINES
         // ─────────────────────────────────────────────────────────────────────
 
-        // ── Rescan ────────────────────────────────────────────────────────────
+        // ── Rescan (kept for backward-compat, no longer triggered by Triangle) ─
         tickRescan();
 
         // ── Transfer flick ────────────────────────────────────────────────────
@@ -353,6 +375,8 @@ public class Teleop extends OpMode {
                     Spindexer.INSTANCE.periodic();
 
                     if (Spindexer.INSTANCE.getFull()) {
+                        // IMPORTANT: Outreach-style auto-transition — spindexer full,
+                        // immediately switch to shoot mode without any driver input.
                         enterShootMode();
                     } else {
                         int free = Spindexer.INSTANCE.freePosition();
@@ -434,7 +458,6 @@ public class Teleop extends OpMode {
                 && Math.abs(gamepad1.right_stick_x) < 0.05;
 
         if (mode == RobotMode.INTAKE && relocTimer.seconds() > 0.5 && isStill) {
-            // Now pull the snapshot with the freshly updated orientation alignment
             double[] llPose = Limelight.INSTANCE.getSnapshotPose();
 
             if (llPose != null) {
@@ -458,61 +481,61 @@ public class Teleop extends OpMode {
             }
         }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // TELEMETRY
-    // ─────────────────────────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────────
+        // TELEMETRY
+        // ─────────────────────────────────────────────────────────────────────
 
-            double llDist = Limelight.INSTANCE.distanceFromTag(goalId);
+        double llDist = Limelight.INSTANCE.distanceFromTag(goalId);
 
-            Spindexer.DetectedColor[] balls = Spindexer.INSTANCE.getBallAtPosition();
+        Spindexer.DetectedColor[] balls = Spindexer.INSTANCE.getBallAtPosition();
 
-            int ballCount = 0;
-            for (Spindexer.DetectedColor c : balls)
-                if (c != Spindexer.DetectedColor.EMPTY) ballCount++;
+        int ballCount = 0;
+        for (Spindexer.DetectedColor c : balls)
+            if (c != Spindexer.DetectedColor.EMPTY) ballCount++;
 
-            String flywheelStatus =
-                    flywheelState == 0 ? "OFF" :
-                            flywheelState == 1 ? "SPINNING" :
-                                    "READY";
+        String flywheelStatus =
+                flywheelState == 0 ? "OFF" :
+                        flywheelState == 1 ? "SPINNING" :
+                                "READY";
 
-            boolean readyToShoot =
-                    flywheelState == 2 &&
-                            Turret.INSTANCE.isSettled();
+        boolean readyToShoot =
+                flywheelState == 2 &&
+                        Turret.INSTANCE.isSettled();
 
-            telemetry.addLine("════════ MATCH STATUS ════════");
-            telemetry.addData("Mode", mode);
-            telemetry.addData("Pattern",
-                    MatchPattern.getPattern() +
-                            (MatchPattern.isLocked() ? " 🔒" : ""));
-            telemetry.addData("Ready", readyToShoot ? "✓ YES" : "NO");
+        telemetry.addLine("════════ MATCH STATUS ════════");
+        telemetry.addData("Mode", mode);
+        telemetry.addData("Pattern",
+                MatchPattern.getPattern() +
+                        (MatchPattern.isLocked() ? " 🔒" : ""));
+        telemetry.addData("Ready", readyToShoot ? "✓ YES" : "NO");
 
-            telemetry.addLine();
+        telemetry.addLine();
 
-            telemetry.addLine("════════ SHOOTER ═════════════");
-            telemetry.addData("Flywheel", flywheelStatus);
-            telemetry.addData("RPM",
-                    String.format("%d / %d",
-                            (int) Turret.INSTANCE.getVelocity(),
-                            (int) Turret.INSTANCE.distanceToVelocity(px, py, alliance)));
-            telemetry.addData("AutoShoot", shootState);
+        telemetry.addLine("════════ SHOOTER ═════════════");
+        telemetry.addData("Flywheel", flywheelStatus);
+        telemetry.addData("RPM",
+                String.format("%d / %d",
+                        (int) Turret.INSTANCE.getVelocity(),
+                        (int) Turret.INSTANCE.distanceToVelocity(px, py, alliance)));
+        telemetry.addData("AutoShoot", shootState);
 
-            telemetry.addLine();
+        telemetry.addLine();
 
-            telemetry.addLine("════════ BALLS ═══════════════");
-            telemetry.addData("Count", ballCount + "/3");
-            telemetry.addData("Slot 1", balls[0]);
-            telemetry.addData("Slot 2", balls[1]);
-            telemetry.addData("Slot 3", balls[2]);
+        telemetry.addLine("════════ BALLS ═══════════════");
+        telemetry.addData("Count", ballCount + "/3");
+        telemetry.addData("Slot 1", balls[0]);
+        telemetry.addData("Slot 2", balls[1]);
+        telemetry.addData("Slot 3", balls[2]);
 
-            telemetry.addLine();
+        telemetry.addLine();
 
-            telemetry.addLine("════════ ROBOT ═══════════════");
-            telemetry.addData("Distance",
-                    llDist > 0 ? String.format("%.1f in", llDist) : "NO TARGET");
-            telemetry.addData("Heading",
-                    String.format("%.1f°", Pinpoint.INSTANCE.getHeading()));
-            telemetry.addData("Pos",
-                    String.format("(%.0f, %.0f)", px, py));
+        telemetry.addLine("════════ ROBOT ═══════════════");
+        telemetry.addData("Distance",
+                llDist > 0 ? String.format("%.1f in", llDist) : "NO TARGET");
+        telemetry.addData("Heading",
+                String.format("%.1f°", Pinpoint.INSTANCE.getHeading()));
+        telemetry.addData("Pos",
+                String.format("(%.0f, %.0f)", px, py));
         double[] raw = Limelight.INSTANCE.getMegaTagPoseRaw();
         double[] converted = Limelight.INSTANCE.getMegaTagPose();
         if (raw != null) {
@@ -526,7 +549,7 @@ public class Teleop extends OpMode {
         telemetry.addData("Turret Actual", Turret.INSTANCE.getTurretAngle());
         telemetry.addData("TurretOffset", Turret.INSTANCE.getTurretOffSet());
 
-            telemetry.update();
+        telemetry.update();
 
         // ── Edge detect bookkeeping ───────────────────────────────────────────
         lastTriangle = triangle; lastCircle = circle;
@@ -541,10 +564,8 @@ public class Teleop extends OpMode {
 
     /**
      * IMPORTANT: Cycles through all spindexer slots and updates the internal color map.
-     */
-    /**
-     * IMPORTANT: Cycles through all spindexer slots and updates the internal color map.
      * Automatically transitions to shooting mode if full, or resumes intaking if slots remain.
+     * NOTE: This is no longer triggered by Triangle — it's kept for any future use.
      */
     private void tickRescan() {
         switch (rescanState) {
@@ -560,30 +581,20 @@ public class Teleop extends OpMode {
             case READING:
                 rescanIndex++;
                 if (rescanIndex >= Spindexer.Position.values().length) {
-                    // Update spindexer state with the newly scanned colors
                     Spindexer.INSTANCE.periodic();
 
                     if (Spindexer.INSTANCE.getFull()) {
-                        // SCENARIO A: Spindexer is completely full.
-                        // Automatically switch to shoot mode, spin up flywheels, and target the first ball.
                         enterShootMode();
                     } else {
-                        // SCENARIO B: Spindexer has empty slots.
-                        // Automatically find the next free slot and resume intaking.
                         int free = Spindexer.INSTANCE.freePosition();
                         if (free != -1) {
                             mode = RobotMode.INTAKE;
                             Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
                             Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
-
-                            // Turn the intake system back on
                             intakeRunning = true;
                             Intake.INSTANCE.on();
-
-                            // IMPORTANT: Reset dwelling so the dwell-timer starts fresh for the new slot
                             dwelling = false;
                         } else {
-                            // Fallback safety
                             enterIntakeMode();
                         }
                     }
@@ -626,7 +637,9 @@ public class Teleop extends OpMode {
                     flickState   = FlickState.IDLE;
                     transferDown = true;
 
-                    // Spin back up for the next ball.
+                    // CHANGED: Reset flywheel to spinning-up so tickAutoShoot's
+                    // WAIT_FLYWHEEL gate forces a proper speed confirmation before
+                    // the next ball fires. This is the key fix for the "too fast" issue.
                     flywheelState = 1;
                     rumbled       = false;
                 }
@@ -637,10 +650,26 @@ public class Teleop extends OpMode {
 
     /**
      * IMPORTANT: Automates the sequence of shooting multiple balls.
-     * Uses the distance sensor to confirm when a ball has cleared the shooter.
+     * CHANGED: Added WAIT_FLYWHEEL state — each ball now waits for the flywheel
+     * to confirm ready (flywheelState==2) before firing. Matches Outreach behaviour.
      */
     private void tickAutoShoot() {
         switch (shootState) {
+            // ── NEW STATE: wait for flywheel to spin up before firing ──────────
+            case WAIT_FLYWHEEL:
+                // Abort if somehow no balls remain
+                if (Spindexer.INSTANCE.getEmpty()) {
+                    shootState = ShootState.IDLE;
+                    break;
+                }
+                // Once flywheel is confirmed ready, fire
+                if (flywheelState == 2 && flickState == FlickState.IDLE && transferDown) {
+                    shootTimer.reset();
+                    shootState = ShootState.CONFIRM;
+                    triggerFlick();
+                }
+                break;
+
             case CONFIRM:
                 if (flickState != FlickState.IDLE) break;
                 if (distanceSensor.isClear()) {
@@ -655,12 +684,12 @@ public class Teleop extends OpMode {
 
             case REFIRE_WAIT:
                 if (shootTimer.seconds() >= REFIRE_DELAY_SEC
-                        && Turret.INSTANCE.isSettled()
                         && flickState == FlickState.IDLE
                         && transferDown) {
                     shootTimer.reset();
-                    shootState = ShootState.CONFIRM;
-                    triggerFlick();
+                    // CHANGED: Go back through WAIT_FLYWHEEL to ensure speed is
+                    // confirmed before the refire attempt.
+                    shootState = ShootState.WAIT_FLYWHEEL;
                 }
                 break;
 
@@ -669,11 +698,11 @@ public class Teleop extends OpMode {
                     shootState = ShootState.IDLE;
                     break;
                 }
-                // Fire next ball once turret and flywheels have recovered.
-                if (Turret.INSTANCE.isSettled() && flickState == FlickState.IDLE && transferDown) {
-                    shootTimer.reset();
-                    shootState = ShootState.CONFIRM;
-                    triggerFlick();
+                // CHANGED: Gate on WAIT_FLYWHEEL instead of firing directly.
+                // This ensures the wheel has re-spun after the previous flick
+                // before we fire the next ball.
+                if (flickState == FlickState.IDLE && transferDown) {
+                    shootState = ShootState.WAIT_FLYWHEEL;
                 }
                 break;
 
@@ -721,11 +750,12 @@ public class Teleop extends OpMode {
     private void triggerFlick() {
         if (flickState == FlickState.IDLE && transferDown) {
             transferDown  = false;
-            Transfer.INSTANCE.transferUpAggressive(); // TODO: Remove this after Banquet
+            Transfer.INSTANCE.transferUpAggressive();
             flickTimer.reset();
             flickState    = FlickState.WAIT_UP;
-            flywheelState = 1;   // reset ready state — re-confirm speed after flick.
-            rumbled       = false;
+            // NOTE: flywheelState intentionally NOT reset here — tickFlick's
+            // WAIT_DOWN does it after the transfer fully returns, so
+            // WAIT_FLYWHEEL always sees a clean state.
         }
     }
 
