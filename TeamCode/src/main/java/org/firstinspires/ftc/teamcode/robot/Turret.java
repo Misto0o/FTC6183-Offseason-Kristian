@@ -26,7 +26,7 @@ public class Turret {
     // turretOffSet maps the raw analog voltage (0-3.3V) to a 0-360 degree physical orientation.
     public static double turretOffSet    = 340; // DO NOT TOUCH unless needs to be re-calibrated
     // threshold defines the "acceptable" velocity error for the flywheels in ticks per second.
-    public static double threshold       = 15; // TODO tune this first shot is short sometimes
+    public static double threshold       = 10; // TODO tune this first shot is short sometimes
     public static double turretKp        = 0.02;
     public static double turretKd        = 0.005;
 

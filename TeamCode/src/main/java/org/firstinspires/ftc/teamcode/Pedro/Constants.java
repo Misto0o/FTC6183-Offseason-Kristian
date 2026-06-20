@@ -26,7 +26,7 @@ public class Constants {
             .mass(35) // kg
             .forwardZeroPowerAcceleration(-43.18)
             .lateralZeroPowerAcceleration(-64)
-            .translationalPIDFCoefficients(new PIDFCoefficients(0.175,0,0.01,0.03))
+            .translationalPIDFCoefficients(new PIDFCoefficients(0.175,0,0.02,0.03))
             .headingPIDFCoefficients(new PIDFCoefficients(1,0,0.02,0.03))
             .drivePIDFCoefficients(new FilteredPIDFCoefficients(0.0025,0,0.00001,0.6,0.01))
             .centripetalScaling(0.03);
@@ -40,10 +40,10 @@ public class Constants {
             .rightRearMotorName("br")
             .leftRearMotorName("bl")
             .leftFrontMotorName("fl")
-            .rightFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
-            .leftFrontMotorDirection(DcMotorSimple.Direction.REVERSE)
+            .rightFrontMotorDirection(DcMotorSimple.Direction.REVERSE)
+            .leftFrontMotorDirection(DcMotorSimple.Direction.FORWARD)
             .rightRearMotorDirection(DcMotorSimple.Direction.FORWARD)
-            .leftRearMotorDirection(DcMotorSimple.Direction.REVERSE); // Match DT if breaks go back to Reverse
+            .leftRearMotorDirection(DcMotorSimple.Direction.FORWARD); // matches DT now
 
     // IMPORTANT: Localization constants for the Pinpoint computer.
     // Pod offsets are in inches relative to the center of rotation.
