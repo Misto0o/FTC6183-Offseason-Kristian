@@ -136,26 +136,32 @@ public class Teleop extends OpMode {
             gamepad1.rumbleBlips(2);
         }
 
-        // Auto-set position from MT2 if tag is visible
-        Limelight.INSTANCE.setRobotOrientation(Pinpoint.INSTANCE.getHeading());
-        double[] mt2 = Limelight.INSTANCE.getMegaTagPose();
-        if (mt2 != null) {
-            Pinpoint.INSTANCE.updatePosition(new Pose2D(
-                    DistanceUnit.INCH, mt2[0], mt2[1],
-                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
-            telemetry.addData("Start Pos (MT2)", String.format("(%.1f, %.1f)", mt2[0], mt2[1]));
+        // Try MT2 yaw first since Pinpoint's heading is meaningless until we have a real reference
+        double mt2Yaw = Limelight.INSTANCE.getMegaTagYaw();
+
+        if (mt2Yaw >= 0) {
+            // Feed MT2's own yaw back to itself so its position solve is self-consistent
+            Limelight.INSTANCE.setRobotOrientation(mt2Yaw);
+            double[] mt2 = Limelight.INSTANCE.getMegaTagPose();
+
+            if (mt2 != null) {
+                Pinpoint.INSTANCE.updatePosition(new Pose2D(
+                        DistanceUnit.INCH, mt2[0], mt2[1],
+                        AngleUnit.DEGREES, mt2Yaw));
+                telemetry.addData("Start Pos (MT2)", String.format("(%.1f, %.1f) @ %.1f°", mt2[0], mt2[1], mt2Yaw));
+            }
         } else {
-            // Fall back to alliance corner if no tag visible
+            // No tag visible — assume start corner, heading 0
             double fallbackX = (alliance == Aliance.BLUE) ? 135.5 : 8.5;
             Pinpoint.INSTANCE.updatePosition(new Pose2D(
                     DistanceUnit.INCH, fallbackX, 9,
-                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
-            telemetry.addData("Start Pos (fallback)", String.format("(%.1f, 9)", fallbackX));
+                    AngleUnit.DEGREES, 0));
+            telemetry.addData("Start Pos (fallback corner)", String.format("(%.1f, 9) @ 0°", fallbackX));
         }
 
         telemetry.addData("Alliance", alliance);
         telemetry.addData("Pattern", MatchPattern.getPattern());
-        telemetry.addLine("Hold ✕ with turret facing FRONT to recalibrate");
+        telemetry.addLine("Hold ✕ with turret facing FRONT to recalibrate Only If needed");
         telemetry.addData("Turret Angle", Turret.INSTANCE.getTurretAngle());
         telemetry.update();
     }
@@ -459,28 +465,30 @@ public class Teleop extends OpMode {
 
         if (mode == RobotMode.INTAKE && relocTimer.seconds() > 0.5 && isStill) {
             double[] llPose = Limelight.INSTANCE.getSnapshotPose();
+            double llYaw = Limelight.INSTANCE.getMegaTagYaw();
+            relocTimer.reset();
 
-            if (llPose != null) {
+            if (llPose != null && llYaw >= 0) {
                 double llX = llPose[0];
                 double llY = llPose[1];
+                double ppX = Pinpoint.INSTANCE.getPosX();
+                double ppY = Pinpoint.INSTANCE.getPosY();
+                double ppHeading = Pinpoint.INSTANCE.getHeading();
 
-                if (llX > 1 && llX < 143 && llY > 1 && llY < 143) {
-                    double ppX = Pinpoint.INSTANCE.getPosX();
-                    double ppY = Pinpoint.INSTANCE.getPosY();
+                if (Math.abs(llX - ppX) < 20 && Math.abs(llY - ppY) < 20) {
+                    double blendedX = 0.90 * ppX + 0.10 * llX;
+                    double blendedY = 0.90 * ppY + 0.10 * llY;
 
-                    double error = Math.hypot(llX - ppX, llY - ppY);
+                    // Blend heading carefully — handle wraparound (e.g. 359° vs 1°)
+                    double headingError = llYaw - ppHeading;
+                    headingError = ((headingError + 180) % 360 + 360) % 360 - 180;
+                    double blendedHeading = ppHeading + 0.10 * headingError;
+                    blendedHeading = ((blendedHeading % 360) + 360) % 360;
 
-                    if (error < 20) {
-                        double blendedX = 0.95 * ppX + 0.05 * llX;
-                        double blendedY = 0.95 * ppY + 0.05 * llY;
-
-                        Pinpoint.INSTANCE.relocalizePositionFromTag(blendedX, blendedY);
-                        relocTimer.reset();
-                    }
+                    Pinpoint.INSTANCE.relocalizeFull(blendedX, blendedY, blendedHeading);
                 }
             }
         }
-
         // ─────────────────────────────────────────────────────────────────────
         // TELEMETRY
         // ─────────────────────────────────────────────────────────────────────

@@ -117,6 +117,10 @@ public class Turret {
                 && getVelocity() >= turretVelocity - threshold;
     }
 
+    public void cutPower() {
+        if (turret != null) turret.setPower(0);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Goal Targeting Logic - SIMPLIFIED
     // ─────────────────────────────────────────────────────────────────────────

@@ -215,6 +215,24 @@ public class Limelight {
         return new double[]{ pinpointX, pinpointY };
     }
 
+    /**
+     * Returns the field-relative yaw (heading) from MT2's botpose, in degrees [0, 360).
+     * Use this to seed Pinpoint's true heading when no other reference exists yet
+     * (e.g. before resetPosAndIMU has any real-world context).
+     */
+    public double getMegaTagYaw() {
+        if (limelight == null) return -1;
+        LLResult result = limelight.getLatestResult();
+        if (result == null) return -1;
+
+        org.firstinspires.ftc.robotcore.external.navigation.Pose3D botpose =
+                result.getBotpose_MT2();
+        if (botpose == null) return -1;
+        if (result.getFiducialResults() == null || result.getFiducialResults().isEmpty()) return -1;
+
+        double yaw = botpose.getOrientation().getYaw(AngleUnit.DEGREES);
+        return ((yaw % 360) + 360) % 360;
+    }
 
     public double[] getMegaTagPoseRaw() {
         if (limelight == null) return null;

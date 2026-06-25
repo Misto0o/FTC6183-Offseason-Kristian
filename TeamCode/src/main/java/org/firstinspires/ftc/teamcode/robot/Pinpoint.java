@@ -97,6 +97,22 @@ public class Pinpoint {
         ));
     }
 
+    /**
+     * Corrects X/Y AND heading using a vision-based pose.
+     * Use sparingly — heading corrections should be gentle since Pinpoint's IMU
+     * is usually more reliable frame-to-frame than a single vision snapshot.
+     */
+    public void relocalizeFull(double correctedX, double correctedY, double correctedHeadingDeg) {
+        if (pinpoint == null) return;
+        pinpoint.setPosition(new Pose2D(
+                DistanceUnit.INCH,
+                correctedX,
+                correctedY,
+                AngleUnit.DEGREES,
+                correctedHeadingDeg
+        ));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Periodic Update (Call once per loop)
     // ─────────────────────────────────────────────────────────────────────────

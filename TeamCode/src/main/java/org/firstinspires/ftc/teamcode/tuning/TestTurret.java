@@ -35,6 +35,9 @@ public class TestTurret extends OpMode {
     private boolean prevDpadLeft = false;
     private boolean prevDpadRight= false;
 
+    private boolean motorEnabled = true;
+    private boolean prevLeftBumper = false;
+
     @Override
     public void init() {
         telemetry = new MultipleTelemetry(telemetry, FtcDashboard.getInstance().getTelemetry());
@@ -54,6 +57,14 @@ public class TestTurret extends OpMode {
             Turret.INSTANCE.calibrateToParkedPosition();
             gamepad1.rumbleBlips(2);
         }
+
+        boolean leftBumper = gamepad1.left_bumper;
+
+        if (leftBumper && !prevLeftBumper) {
+            motorEnabled = !motorEnabled;
+            gamepad1.rumbleBlips(motorEnabled ? 2 : 1);
+        }
+        prevLeftBumper = leftBumper;
 
         telemetry.addLine("Hold ✕ with turret at intake position to calibrate.");
         telemetry.addData("Turret Angle", String.format("%.2f°", Turret.INSTANCE.getTurretAngle()));
@@ -117,6 +128,14 @@ public class TestTurret extends OpMode {
                     new Pose2D(DistanceUnit.INCH, robotStartX, robotStartY, AngleUnit.DEGREES, 0));
         }
 
+        Turret.INSTANCE.setVelocity(0);
+        Turret.INSTANCE.periodic();
+
+        if (!motorEnabled) {
+            // Override — cut turret power so it can be moved freely by hand
+            Turret.INSTANCE.cutPower();
+        }
+
         prevSquare    = square;
         prevCircle    = circle;
         prevTriangle  = triangle;
@@ -158,6 +177,8 @@ public class TestTurret extends OpMode {
                 ? String.format("%.2f°", recordedRightLimit) : "not recorded");
         telemetry.addData("Left limit  (DPad ←)", recordedLeftLimit >= 0
                 ? String.format("%.2f°", recordedLeftLimit)  : "not recorded");
+        telemetry.addData("Motor", motorEnabled ? "ON (PD holding)" : "OFF (free to move)");
+        telemetry.addLine("LB = Toggle motor power (turn OFF to find limits by hand)");
         telemetry.addLine("");
 
         telemetry.addLine("════ POSITION ════");
