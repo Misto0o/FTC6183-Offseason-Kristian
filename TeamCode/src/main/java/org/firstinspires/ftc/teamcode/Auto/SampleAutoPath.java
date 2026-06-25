@@ -13,7 +13,7 @@ import org.firstinspires.ftc.teamcode.Pedro.Constants;
 
 
 @TeleOp
-public class SampleAutoPathing extends OpMode {
+public class SampleAutoPath extends OpMode {
     private Follower follower;
     private Timer pathTimer, opModeTimer;
     private TelemetryManager panelsTelemetry;
