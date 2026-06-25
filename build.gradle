@@ -1,27 +1,21 @@
-/**
- * Top-level build file for ftc_app project.
- *
- * It is extraordinarily rare that you will ever need to edit this file.
- */
-
 buildscript {
     repositories {
+        maven { url 'https://repo.maven.apache.org/maven2' }
+        maven { url 'https://jitpack.io' }
         mavenCentral()
         google()
     }
     dependencies {
-        // Note for FTC Teams: Do not modify this yourself.
-        classpath 'com.android.tools.build:gradle:8.7.0'
+        classpath 'com.android.tools.build:gradle:8.13.2'
     }
 }
 
-// This is now required because aapt2 has to be downloaded from the
-// google() repository beginning with version 3.2 of the Android Gradle Plugin
 allprojects {
     repositories {
         mavenCentral()
         google()
         maven { url = 'https://maven.brott.dev/' }
+        maven { url 'https://jitpack.io' }
     }
 }
 
