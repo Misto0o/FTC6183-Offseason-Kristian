@@ -8,7 +8,7 @@ import org.firstinspires.ftc.teamcode.robot.Spindexer.DetectedColor;
 import java.util.List;
 
 /**
- * RampScanner Utility
+ * RampScanner Utility (Experimental)
  * IMPORTANT: This class uses the Limelight's Neural Detector pipeline to count balls 
  * on the field ramp. This data is fed into the PatternStrategy to optimize scoring.
  */

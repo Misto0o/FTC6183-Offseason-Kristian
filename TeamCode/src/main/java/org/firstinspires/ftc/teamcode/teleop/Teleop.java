@@ -40,6 +40,7 @@ public class Teleop extends OpMode {
     public static double SHOT_TIMEOUT_SEC     = 1.5;   // max wait for distance sensor to clear
     public static double REFIRE_DELAY_SEC     = 0.5;   // pause before refiring
     public static double RESCAN_MOVE_SEC      = 0.15;  // time to wait after moving spindexer before reading
+    public static double SPINDEXER_SETTLE_SEC = 0.25;  // min time after commanding a SHOOT-mode spindexer move before the fork is allowed to fire — prevents fork landing on a ball mid-spin
     public static double HOOD_OVERRIDE        = -1;  // -1 = use table, 0.0-1.0 = manual
     public static double VELO_OVERRIDE        = -1;  // -1 = use table, >0 = manual cap
 
@@ -66,6 +67,14 @@ public class Teleop extends OpMode {
     private enum FlickState { IDLE, WAIT_UP, WAIT_DOWN }
     private FlickState flickState = FlickState.IDLE;
     private final ElapsedTime flickTimer = new ElapsedTime();
+
+    // ── Spindexer settle tracking (shoot mode) ────────────────────────────────
+    // Tracks whether the spindexer has finished physically arriving at the slot
+    // it was last commanded to. triggerFlick() checks this before allowing a fire,
+    // so spamming SQUARE can't drop the fork while the spindexer is still spinning.
+    private boolean spindexerSettled = true;
+    private final ElapsedTime spindexerSettleTimer = new ElapsedTime();
+    private int lastCommandedSlot = -1;
 
     // ── Auto-shoot state machine ──────────────────────────────────────────────
     // CHANGED: Added WAIT_FLYWHEEL state so each ball waits for flywheelState==2
@@ -136,32 +145,31 @@ public class Teleop extends OpMode {
             gamepad1.rumbleBlips(2);
         }
 
-        // Try MT2 yaw first since Pinpoint's heading is meaningless until we have a real reference
-        double mt2Yaw = Limelight.INSTANCE.getMegaTagYaw();
-
-        if (mt2Yaw >= 0) {
-            // Feed MT2's own yaw back to itself so its position solve is self-consistent
-            Limelight.INSTANCE.setRobotOrientation(mt2Yaw);
-            double[] mt2 = Limelight.INSTANCE.getMegaTagPose();
-
-            if (mt2 != null) {
-                Pinpoint.INSTANCE.updatePosition(new Pose2D(
-                        DistanceUnit.INCH, mt2[0], mt2[1],
-                        AngleUnit.DEGREES, mt2Yaw));
-                telemetry.addData("Start Pos (MT2)", String.format("(%.1f, %.1f) @ %.1f°", mt2[0], mt2[1], mt2Yaw));
-            }
+        // Auto-set position from MT1 if tag is visible.
+        // CHANGED: was getMegaTagPose() (MT2) — switched to getMT1Pose() so the
+        // starting pose comes from the same solver as in-match relocalization
+        // (getSnapshotPose() in loop() already uses MT1 via Limelight.java).
+        // MT1 does not need setRobotOrientation() fed in, but it's harmless to
+        // leave the call here in case you ever fall back to MT2.
+        Limelight.INSTANCE.setRobotOrientation(Pinpoint.INSTANCE.getHeading());
+        double[] mt1 = Limelight.INSTANCE.getMT1Pose();
+        if (mt1 != null) {
+            Pinpoint.INSTANCE.updatePosition(new Pose2D(
+                    DistanceUnit.INCH, mt1[0], mt1[1],
+                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
+            telemetry.addData("Start Pos (MT1)", String.format("(%.1f, %.1f)", mt1[0], mt1[1]));
         } else {
-            // No tag visible — assume start corner, heading 0
+            // Fall back to alliance corner if no tag visible
             double fallbackX = (alliance == Aliance.BLUE) ? 135.5 : 8.5;
             Pinpoint.INSTANCE.updatePosition(new Pose2D(
                     DistanceUnit.INCH, fallbackX, 9,
-                    AngleUnit.DEGREES, 0));
-            telemetry.addData("Start Pos (fallback corner)", String.format("(%.1f, 9) @ 0°", fallbackX));
+                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
+            telemetry.addData("Start Pos (fallback)", String.format("(%.1f, 9)", fallbackX));
         }
 
         telemetry.addData("Alliance", alliance);
         telemetry.addData("Pattern", MatchPattern.getPattern());
-        telemetry.addLine("Hold ✕ with turret facing FRONT to recalibrate Only If needed");
+        telemetry.addLine("Hold ✕ with turret facing FRONT to recalibrate");
         telemetry.addData("Turret Angle", Turret.INSTANCE.getTurretAngle());
         telemetry.update();
     }
@@ -224,37 +232,29 @@ public class Teleop extends OpMode {
         }
 
         // ── TRIANGLE: intake toggle / misread recovery ────────────────────────
-        // CHANGED: Replaced the old full-rescan path with Outreach-style instant
-        // recovery. Whether we were shooting or intaking, Triangle always drops us
-        // into intake mode pointing at the next free slot with the intake running.
-        // There is no longer a manual rescan cycle — the dwell loop already
-        // handles re-reading a slot after the spindexer moves.
+        // CHANGED: ported straight over from Outreach, replacing the old
+        // intakeRunning-branching version. Outreach doesn't bother hunting for a
+        // specific free slot on the button press itself — it just drops the
+        // spindexer into INTAKE mode and turns the intake on, and lets the dwell
+        // loop (also ported below) do the actual re-scan/re-stamp work. That's
+        // what makes a second Triangle press fix a misread: the dwell loop
+        // unconditionally re-reads and re-stamps whatever slot it's sitting on,
+        // instead of trusting the old stored color like Teleop used to.
         if (triangle && !lastTriangle) {
-            // Cancel any active shoot or flick cycle first
+            // Still cancel any active shoot/flick cycle first — Outreach has no
+            // equivalent state to cancel, but Teleop does, so keep this safe.
             shootState = ShootState.IDLE;
             flickState = FlickState.IDLE;
             transferDown = true;
             Transfer.INSTANCE.transferDownAggressive();
 
-            // reset dwell so sensor re-confirms the new slot
-            if (!intakeRunning) {
-                // Start / restart intake: switch to intake mode and find first free slot.
-                // enterIntakeMode() already points the spindexer at a free slot.
-                enterIntakeMode();
-                intakeRunning = true;
-                Intake.INSTANCE.on();
-            } else {
-                // Intake already running (misread recovery or mode switch from shoot).
-                // Just re-sync the spindexer to the next free slot and keep rolling.
-                // IMPORTANT: This is the key Outreach behaviour — no full rescan,
-                // just swing to the free slot and the dwell loop takes care of the rest.
-                int free = Spindexer.INSTANCE.freePosition();
-                if (free != -1) {
-                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
-                    Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
-                }
-            }
-            dwelling = false; // let dwell timer start fresh on next loop tick
+            mode = RobotMode.INTAKE;
+            intakeRunning = true;
+            flywheelState = 0;
+            rumbled = false;
+            Turret.INSTANCE.setVelocity(0);
+            Intake.INSTANCE.on();
+            Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
         }
 
         // ── SQUARE: flywheel on/off toggle ────────────────────────────────────
@@ -301,11 +301,12 @@ public class Teleop extends OpMode {
 
         if (dd && !lastDD) {
             double[] visionPose = Limelight.INSTANCE.getAveragedSnapshotPose(5);
-            if (visionPose != null) {
+            double visionYaw = Limelight.INSTANCE.getMT1Yaw();
+            if (visionPose != null && visionYaw >= 0) {
                 double visionX = visionPose[0];
                 double visionY = visionPose[1];
                 if (visionX > 1.0 && visionX < 143.0 && visionY > 1.0 && visionY < 143.0) {
-                    Pinpoint.INSTANCE.relocalizePositionFromTag(visionX, visionY);
+                    Pinpoint.INSTANCE.relocalizeFull(visionX, visionY, visionYaw);
                     gamepad1.rumble(1.0, 1.0, 150);
                 }
             } else {
@@ -358,31 +359,32 @@ public class Teleop extends OpMode {
         // ─────────────────────────────────────────────────────────────────────
         // INTAKE LOGIC — runs every tick when in intake mode
         // ─────────────────────────────────────────────────────────────────────
+        // CHANGED: ported straight over from Outreach. The old Teleop version
+        // pre-checked getBallAtPosition()[...] != EMPTY and, if the stored state
+        // already said "occupied," skipped reading entirely and jumped to
+        // another free slot — which meant a misread slot stayed wrong forever.
+        // Outreach's version always re-reads and re-stamps whatever slot it's
+        // currently dwelling on, unconditionally overwriting the old value, so
+        // a misread gets corrected the next time the dwell loop revisits it.
         if (mode == RobotMode.INTAKE
                 && Spindexer.INSTANCE.getPositionType() == Spindexer.PositionType.INTAKE
                 && flickState == FlickState.IDLE) {
 
             if (intakeRunning) {
-                // Only read/dwell if current slot is actually empty
-                if (Spindexer.INSTANCE.getBallAtPosition()[
-                        Spindexer.INSTANCE.getPosition().ordinal()] != Spindexer.DetectedColor.EMPTY) {
-                    // Slot already has a ball — find next free one
-                    dwelling = false;
-                    int free = Spindexer.INSTANCE.freePosition();
-                    if (free != -1)
-                        Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
-                } else if (!dwelling) {
+                // Read color and dwell at current slot before deciding to advance
+                Spindexer.DetectedColor seen = Spindexer.INSTANCE.readCurrentColor();
+
+                if (!dwelling) {
+                    // Start dwell — stay here so sensor can confirm what it sees
                     dwelling = true;
                     dwellTimer.reset();
                 } else if (dwellTimer.seconds() >= INTAKE_DWELL_SEC) {
-                    Spindexer.DetectedColor seen = Spindexer.INSTANCE.readCurrentColor();
+                    // Dwell complete — stamp the confirmed color then advance
                     Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), seen);
                     dwelling = false;
-                    Spindexer.INSTANCE.periodic();
+                    Spindexer.INSTANCE.periodic(); // recompute full/empty after stamp
 
                     if (Spindexer.INSTANCE.getFull()) {
-                        // IMPORTANT: Outreach-style auto-transition — spindexer full,
-                        // immediately switch to shoot mode without any driver input.
                         enterShootMode();
                     } else {
                         int free = Spindexer.INSTANCE.freePosition();
@@ -390,6 +392,7 @@ public class Teleop extends OpMode {
                             Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[free]);
                     }
                 }
+                // While dwelling: don't move, just keep reading
             } else {
                 dwelling = false;
             }
@@ -434,14 +437,28 @@ public class Teleop extends OpMode {
             }
 
             // Keep spindexer pointed at next ball to shoot.
+            // CHANGED: now also tracks settle time — every time a NEW slot is
+            // commanded, spindexerSettled goes false and the timer resets. This
+            // is what triggerFlick() checks before allowing a fire, so SQUARE
+            // spammed right after a shot can't drop the fork mid-spin.
             if (flickState == FlickState.IDLE) {
                 if (Spindexer.INSTANCE.getEmpty()) {
                     enterIntakeMode();
                 } else {
                     int next = nextShootSlot();
-                    if (next != -1)
+                    if (next != -1) {
+                        if (next != lastCommandedSlot) {
+                            lastCommandedSlot = next;
+                            spindexerSettled = false;
+                            spindexerSettleTimer.reset();
+                        }
                         Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
+                    }
                 }
+            }
+            if (!spindexerSettled && spindexerSettleTimer.seconds() >= SPINDEXER_SETTLE_SEC) {
+                spindexerSettled = true;
+                gamepad1.rumbleBlips(1); // small blip: spindexer settled, fork is clear to fire
             }
         } else {
             // Intake mode — turret parked.
@@ -465,30 +482,28 @@ public class Teleop extends OpMode {
 
         if (mode == RobotMode.INTAKE && relocTimer.seconds() > 0.5 && isStill) {
             double[] llPose = Limelight.INSTANCE.getSnapshotPose();
-            double llYaw = Limelight.INSTANCE.getMegaTagYaw();
-            relocTimer.reset();
 
-            if (llPose != null && llYaw >= 0) {
+            if (llPose != null) {
                 double llX = llPose[0];
                 double llY = llPose[1];
-                double ppX = Pinpoint.INSTANCE.getPosX();
-                double ppY = Pinpoint.INSTANCE.getPosY();
-                double ppHeading = Pinpoint.INSTANCE.getHeading();
 
-                if (Math.abs(llX - ppX) < 20 && Math.abs(llY - ppY) < 20) {
-                    double blendedX = 0.90 * ppX + 0.10 * llX;
-                    double blendedY = 0.90 * ppY + 0.10 * llY;
+                if (llX > 1 && llX < 143 && llY > 1 && llY < 143) {
+                    double ppX = Pinpoint.INSTANCE.getPosX();
+                    double ppY = Pinpoint.INSTANCE.getPosY();
 
-                    // Blend heading carefully — handle wraparound (e.g. 359° vs 1°)
-                    double headingError = llYaw - ppHeading;
-                    headingError = ((headingError + 180) % 360 + 360) % 360 - 180;
-                    double blendedHeading = ppHeading + 0.10 * headingError;
-                    blendedHeading = ((blendedHeading % 360) + 360) % 360;
+                    double error = Math.hypot(llX - ppX, llY - ppY);
 
-                    Pinpoint.INSTANCE.relocalizeFull(blendedX, blendedY, blendedHeading);
+                    if (error < 20) {
+                        double blendedX = 0.95 * ppX + 0.05 * llX;
+                        double blendedY = 0.95 * ppY + 0.05 * llY;
+
+                        Pinpoint.INSTANCE.relocalizePositionFromTag(blendedX, blendedY);
+                        relocTimer.reset();
+                    }
                 }
             }
         }
+
         // ─────────────────────────────────────────────────────────────────────
         // TELEMETRY
         // ─────────────────────────────────────────────────────────────────────
@@ -544,13 +559,15 @@ public class Teleop extends OpMode {
                 String.format("%.1f°", Pinpoint.INSTANCE.getHeading()));
         telemetry.addData("Pos",
                 String.format("(%.0f, %.0f)", px, py));
-        double[] raw = Limelight.INSTANCE.getMegaTagPoseRaw();
-        double[] converted = Limelight.INSTANCE.getMegaTagPose();
+        // CHANGED: was MT2 raw/converted — now shows MT1, matching what
+        // getSnapshotPose() actually uses for relocalization above.
+        double[] raw = Limelight.INSTANCE.getMT1PoseRaw();
+        double[] converted = Limelight.INSTANCE.getMT1Pose();
         if (raw != null) {
-            telemetry.addData("MT2 raw inches", String.format("(%.1f, %.1f)", raw[0], raw[1]));
+            telemetry.addData("MT1 raw inches", String.format("(%.1f, %.1f)", raw[0], raw[1]));
         }
         if (converted != null) {
-            telemetry.addData("MT2 converted", String.format("(%.1f, %.1f)", converted[0], converted[1]));
+            telemetry.addData("MT1 converted", String.format("(%.1f, %.1f)", converted[0], converted[1]));
         }
 
         telemetry.addData("Turret Target", Turret.INSTANCE.getTurretAngleSet());
@@ -734,7 +751,15 @@ public class Teleop extends OpMode {
         Intake.INSTANCE.idle();
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
         int next = nextShootSlot();
-        if (next != -1) Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
+        if (next != -1) {
+            Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[next]);
+            // CHANGED: gate the first shot too — entering shoot mode commands a
+            // spindexer move just like any other slot change, so it needs the
+            // same settle delay before triggerFlick() will allow a fire.
+            lastCommandedSlot = next;
+            spindexerSettled  = false;
+            spindexerSettleTimer.reset();
+        }
     }
 
     private void enterIntakeMode() {
@@ -756,7 +781,11 @@ public class Teleop extends OpMode {
     }
 
     private void triggerFlick() {
-        if (flickState == FlickState.IDLE && transferDown) {
+        // CHANGED: added spindexerSettled check — fork can't go up until the
+        // spindexer has actually finished arriving at the commanded slot, not
+        // just whenever flickState happens to be IDLE. This is the fix for the
+        // SQUARE-spam jam (fork landing flat on a ball mid-spin).
+        if (flickState == FlickState.IDLE && transferDown && spindexerSettled) {
             transferDown  = false;
             Transfer.INSTANCE.transferUpAggressive();
             flickTimer.reset();

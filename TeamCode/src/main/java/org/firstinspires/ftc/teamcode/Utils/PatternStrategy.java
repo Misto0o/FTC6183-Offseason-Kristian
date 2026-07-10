@@ -8,7 +8,8 @@ import org.firstinspires.ftc.teamcode.robot.Spindexer.DetectedColor;
  * IMPORTANT: This is the decision engine for the 3-ball scoring bonus. 
  * It calculates whether the combined inventory of the robot (Spindexer) and 
  * the field (Ramp) is sufficient to complete the current randomization pattern.
- *
+ * ────────────────────────────────────────────────────────────────────────────
+ *Experimental Notes: (Not Final Code Not even sure it works)
  * ── Scoring logic ────────────────────────────────────────────────────────────
  *   PATTERN match = 2 pts per ball (must have all 3 for bonus)
  *   CLASSIFIED (ramp ball stays) = 3 pts each

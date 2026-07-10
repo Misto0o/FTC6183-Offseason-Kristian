@@ -21,6 +21,16 @@ public class Outreach extends OpMode {
 
     // ── Dashboard-tunable variables ───────────────────────────────────────────
     public static double shootVelocity = 3000;
+
+    // CHANGED: brought over from Teleop — these replace the old hardcoded 0.5s
+    // waits for the transfer fork, and add a settle window for the spindexer.
+    public static double FLICK_UP_SEC         = 0.9;   // time transfer stays up
+    public static double FLICK_DOWN_SEC       = 1.5;   // settle time after returning down
+    public static double SPINDEXER_SETTLE_SEC = 0.25;  // min time after commanding a new
+    // shoot-mode slot before the fork
+    // is allowed to fire — prevents the
+    // fork landing on a ball mid-spin
+
     // ── Shooter state machine ─────────────────────────────────────────────────
     // 0 = off
     // 1 = spinning up (waiting for velo)
@@ -56,6 +66,15 @@ public class Outreach extends OpMode {
     private final ElapsedTime flickTimer = new ElapsedTime();
     private boolean transferDown = true;
 
+    // ── Spindexer settle tracking (shoot mode) ────────────────────────────────
+    // CHANGED: ported from Teleop. Tracks whether the spindexer has finished
+    // physically arriving at the slot it was last commanded to. Both the manual
+    // Square fire and the auto shoot cycle check this before allowing a fire,
+    // so the fork can never drop while the spindexer is still spinning.
+    private boolean spindexerSettled = true;
+    private final ElapsedTime spindexerSettleTimer = new ElapsedTime();
+    private int lastCommandedSlot = -1;
+
     // ── Intake dwell timer (pause at each slot before advancing) ─────────────
     public static double intakeDwellSec = 0.3; // tunable on dashboard
     private final ElapsedTime dwellTimer = new ElapsedTime();
@@ -84,7 +103,9 @@ public class Outreach extends OpMode {
         Turret.INSTANCE.initialize(hardwareMap);
 
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
-        Turret.INSTANCE.setToAngle(-90);
+        // CHANGED: was hardcoded -90 — now uses the shared parked-angle constant
+        // so it stays in sync with whatever Turret defines as "front/parked".
+        Turret.INSTANCE.setToAngle(Turret.TURRET_PARKED_ANGLE);
         MatchPattern.tryDetect();
 
         telemetry.addLine("Welcome to FTC 6183 TripleParadox!");
@@ -107,8 +128,9 @@ public class Outreach extends OpMode {
         boolean rightBumper = gamepad1.right_bumper;
         if (!MatchPattern.isLocked()) MatchPattern.tryDetect();
 
-        // ── Turret locked at -90 always ───────────────────────────────────────
-        Turret.INSTANCE.setToAngle(-90);
+        // ── Turret locked at parked angle always ───────────────────────────────
+        // CHANGED: was hardcoded -90.
+        Turret.INSTANCE.setToAngle(Turret.TURRET_PARKED_ANGLE);
 
         // ── DPad Left: kill everything ────────────────────────────────────────
         if (dpadLeft && !lastDpadLeft) killEverything();
@@ -172,7 +194,10 @@ public class Outreach extends OpMode {
                     if (ballsFired >= 3) {
                         // All 3 fired — turn off shooter
                         killEverything();
-                    } else if (flickState == FlickState.IDLE && transferDown) {
+                    } else if (flickState == FlickState.IDLE && transferDown && spindexerSettled) {
+                        // CHANGED: added spindexerSettled check — fork can't go up
+                        // until the spindexer has actually finished arriving at the
+                        // commanded slot, not just whenever flickState is IDLE.
                         // Fire one ball
                         transferDown = false;
                         Transfer.INSTANCE.transferUpAggressive();
@@ -216,16 +241,18 @@ public class Outreach extends OpMode {
         }
 
         // ── Manual flick state machine ────────────────────────────────────────
+        // CHANGED: now uses FLICK_UP_SEC / FLICK_DOWN_SEC instead of hardcoded 0.5s,
+        // matching Teleop's (longer, more realistic) fork travel timing.
         switch (flickState) {
             case WAIT_UP:
-                if (flickTimer.seconds() >= 0.5) {
+                if (flickTimer.seconds() >= FLICK_UP_SEC) {
                     Transfer.INSTANCE.transferDownAggressive();
                     flickTimer.reset();
                     flickState = FlickState.WAIT_DOWN;
                 }
                 break;
             case WAIT_DOWN:
-                if (flickTimer.seconds() >= 0.5) {
+                if (flickTimer.seconds() >= FLICK_DOWN_SEC) {
                     Spindexer.INSTANCE.setColor(
                             Spindexer.INSTANCE.getPosition(),
                             Spindexer.DetectedColor.EMPTY
@@ -239,28 +266,39 @@ public class Outreach extends OpMode {
         }
 
         // ── Auto shoot-all-three state machine ────────────────────────────────
+        // CHANGED: SET_POS now marks the spindexer "unsettled" whenever it commands
+        // a new slot, and WAIT_POS gates on spindexerSettled (not just a fixed
+        // timer) before firing — same fix as the manual path above. TRANSFER_UP /
+        // TRANSFER_DOWN now use FLICK_UP_SEC / FLICK_DOWN_SEC.
         switch (shootCycleState) {
-            case SET_POS:
-                Spindexer.INSTANCE.setToPosition(SHOOT_ORDER[shootBallIndex]);
+            case SET_POS: {
+                Spindexer.Position pos = SHOOT_ORDER[shootBallIndex];
+                if (pos.ordinal() != lastCommandedSlot) {
+                    lastCommandedSlot = pos.ordinal();
+                    spindexerSettled = false;
+                    spindexerSettleTimer.reset();
+                }
+                Spindexer.INSTANCE.setToPosition(pos);
                 shootCycleTimer.reset();
                 shootCycleState = ShootCycleState.WAIT_POS;
                 break;
+            }
             case WAIT_POS:
-                if (shootCycleTimer.seconds() >= 0.5) {
+                if (spindexerSettled) {
                     Transfer.INSTANCE.transferUpAggressive();
                     shootCycleTimer.reset();
                     shootCycleState = ShootCycleState.TRANSFER_UP;
                 }
                 break;
             case TRANSFER_UP:
-                if (shootCycleTimer.seconds() >= 0.5) {
+                if (shootCycleTimer.seconds() >= FLICK_UP_SEC) {
                     Transfer.INSTANCE.transferDownAggressive();
                     shootCycleTimer.reset();
                     shootCycleState = ShootCycleState.TRANSFER_DOWN;
                 }
                 break;
             case TRANSFER_DOWN:
-                if (shootCycleTimer.seconds() >= 0.5) {
+                if (shootCycleTimer.seconds() >= FLICK_DOWN_SEC) {
                     shootCycleState = ShootCycleState.MARK_EMPTY;
                 }
                 break;
@@ -334,6 +372,14 @@ public class Outreach extends OpMode {
                     } else {
                         int next = nextShootSlot();
                         if (next != -1) {
+                            // CHANGED: track settle state whenever the manual/auto
+                            // shoot loop commands a new slot, same as the SET_POS
+                            // case above — this is what gates the Square-fire check.
+                            if (next != lastCommandedSlot) {
+                                lastCommandedSlot = next;
+                                spindexerSettled = false;
+                                spindexerSettleTimer.reset();
+                            }
                             Spindexer.INSTANCE.setToPosition(
                                     Spindexer.Position.values()[next]
                             );
@@ -341,6 +387,13 @@ public class Outreach extends OpMode {
                     }
                 }
             }
+        }
+
+        // ── Spindexer settle check ─────────────────────────────────────────────
+        // CHANGED: ported from Teleop — flips spindexerSettled true once enough
+        // time has passed since the last slot change was commanded.
+        if (!spindexerSettled && spindexerSettleTimer.seconds() >= SPINDEXER_SETTLE_SEC) {
+            spindexerSettled = true;
         }
 
         // ── Flywheel ready check + rumble ─────────────────────────────────────
@@ -371,6 +424,7 @@ public class Outreach extends OpMode {
                         shooterState == 1 ? "SPINNING UP..." :
                                 "READY - Press Square! (" + ballsFired + "/3 fired)");
         telemetry.addData("Velo Target", shootVelocity);
+        telemetry.addData("Spindexer Settled", spindexerSettled ? "YES" : "waiting...");
         telemetry.addData("Shoot Cycle", shootCycleActive ? ("Ball " + (shootBallIndex + 1) + "/3") : "IDLE");
         telemetry.addData("Mode", Spindexer.INSTANCE.getPositionType());
         telemetry.addData("Position", Spindexer.INSTANCE.getPosition());
@@ -412,6 +466,10 @@ public class Outreach extends OpMode {
         intakeOn = false;
         dwelling = false;
         transferDown = true;
+        // CHANGED: reset settle tracking so a fresh shoot session doesn't inherit
+        // a stale "settled" flag from before the kill.
+        spindexerSettled = true;
+        lastCommandedSlot = -1;
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
     }
 

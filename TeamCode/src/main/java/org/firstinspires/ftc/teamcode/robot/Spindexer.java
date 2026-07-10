@@ -100,6 +100,8 @@ public class Spindexer {
         full         = false;
         empty        = true;
         positionType = PositionType.INTAKE;
+        currentPosition = Position.POSITION_ONE;
+        spinServo.setPosition(intakePositionOne);
     }
 
     /**
@@ -137,7 +139,6 @@ public class Spindexer {
         full = true;
         return -1;
     }
-
     /**
      * IMPORTANT: Search logic to find the next filled slot for shooting.
      * @return The index (0-2) of the next occupied slot, or -1 if empty.

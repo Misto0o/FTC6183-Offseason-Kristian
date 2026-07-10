@@ -7,12 +7,14 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 import org.firstinspires.ftc.teamcode.robot.Pinpoint;
 import org.firstinspires.ftc.teamcode.robot.Turret;
 
-
 import java.util.List;
+
 @Config
 public class Limelight {
     public static final Limelight INSTANCE = new Limelight();
@@ -20,7 +22,7 @@ public class Limelight {
 
     private Limelight3A limelight;
 
-    // Camera mounting constants — measured from CAD and game manual Used for just testing and a KeepSake
+    // Camera mounting constants — measured from CAD and game manual. Used for just testing and a KeepSake
     public static double CAMERA_HEIGHT_IN = 17.5;
     public static double TAG_HEIGHT_IN    = 29.5;
     public static double CAMERA_TILT_DEG  = 12.07;
@@ -142,34 +144,26 @@ public class Limelight {
         LLResult result = limelight.getLatestResult();
         if (result == null || !result.isValid()) return null;
 
-        // Use the specific goal ID your robot is tracking
         int goalId = (alliance == Aliance.BLUE) ? BLUE_GOAL_ID : RED_GOAL_ID;
 
-        // Find the targeted fiducial in our results array
         List<LLResultTypes.FiducialResult> fiducials = result.getFiducialResults();
         if (fiducials == null || fiducials.isEmpty()) return null;
 
         for (LLResultTypes.FiducialResult fiducial : fiducials) {
             if (fiducial.getFiducialId() == goalId) {
 
-                // 1. Get the camera's position relative to the center face of the AprilTag
-                // Target Space: Z is distance away from tag face, X is horizontal offset from tag center
                 double camXOffsetInches = fiducial.getCameraPoseTargetSpace().getPosition().toUnit(DistanceUnit.INCH).x;
                 double camZOffsetInches = fiducial.getCameraPoseTargetSpace().getPosition().toUnit(DistanceUnit.INCH).z;
 
-                // 2. Identify the absolute field coordinates of your target goals (using your corner map 0-144)
                 double targetFieldX = (alliance == Aliance.BLUE) ? Turret.BLUE_GOAL_X : Turret.RED_GOAL_X;
                 double targetFieldY = (alliance == Aliance.BLUE) ? Turret.BLUE_GOAL_Y : Turret.RED_GOAL_Y;
 
-                // 3. Since the camera is on a rotating turret, we calculate the global heading of the camera body
                 double globalCameraAngleRad = Math.toRadians(Pinpoint.INSTANCE.getHeading() + Turret.INSTANCE.getTurretAngle());
 
-                // 4. Translate camera coordinate vectors back into global field coordinates
                 double absoluteCamX = targetFieldX + (camZOffsetInches * Math.sin(globalCameraAngleRad)) + (camXOffsetInches * Math.cos(globalCameraAngleRad));
                 double absoluteCamY = targetFieldY - (camZOffsetInches * Math.cos(globalCameraAngleRad)) + (camXOffsetInches * Math.sin(globalCameraAngleRad));
 
-                // 5. Account for the physical distance from the camera lens to the center of your drivetrain
-                double cameraRadiusInches = 6.0; // Change this to your robot's actual measurement
+                double cameraRadiusInches = 6.0;
                 double robotFieldX = absoluteCamX - (cameraRadiusInches * Math.cos(globalCameraAngleRad));
                 double robotFieldY = absoluteCamY - (cameraRadiusInches * Math.sin(globalCameraAngleRad));
 
@@ -179,56 +173,132 @@ public class Limelight {
         return null;
     }
 
+    // ── MT1 -> field-corner-origin (Pinpoint-style) conversion ──────────────
+    // This is your friend's CONFIRMED WORKING transform (from their LimeLight.java,
+    // translateLimelightPoseToPedro), ported from Pedro-Pose-returning form into
+    // plain {x, y, headingDeg} doubles so it drops straight into
+    // Pinpoint.relocalizePositionFromTag(x, y) / Pinpoint.updatePosition(...).
+    // Steps, in order, exactly as their code does them:
+    //   1. swap X and Y
+    //   2. add 72 to X
+    //   3. negate Y
+    //   4. add 72 to Y
+    //   5. heading: normalize to [0,360), then subtract 90
+    // Do NOT reorder these steps — swap-then-shift is not the same transform as
+    // shift-then-swap, and this exact order is what's confirmed working on their
+    // (very similar) robot.
+    public double[] getMT1Pose() {
+        if (limelight == null) return null;
+
+        LLResult result = limelight.getLatestResult();
+        if (result == null || !result.isValid()) return null;
+
+        Pose3D botpose = result.getBotpose();
+        if (botpose == null) return null;
+        if (result.getFiducialResults() == null || result.getFiducialResults().isEmpty()) return null;
+
+        Position posIn = botpose.getPosition().toUnit(DistanceUnit.INCH);
+        double rawX = posIn.x;
+        double rawY = posIn.y;
+
+        if (Math.abs(rawX) < 0.01 && Math.abs(rawY) < 0.01) return null;
+
+        // Step 1: swap
+        double swappedX = rawY;
+        double swappedY = rawX;
+
+        // Step 2 & 3 & 4
+        double fieldX = swappedX + 72.0;
+        double fieldY = (-swappedY) + 72.0;
+
+        if (fieldX < 0 || fieldX > 144 || fieldY < 0 || fieldY > 144) return null;
+
+        return new double[]{ fieldX, fieldY };
+    }
+
+    /**
+     * MT1 heading, using the same normalize-then-minus-90 convention as the
+     * confirmed-working friend transform. Degrees.
+     */
+    public double getMT1Yaw() {
+        if (limelight == null) return -1;
+        LLResult result = limelight.getLatestResult();
+        if (result == null) return -1;
+
+        Pose3D botpose = result.getBotpose();
+        if (botpose == null) return -1;
+
+        double yaw = botpose.getOrientation().getYaw(AngleUnit.DEGREES);
+        if (yaw < 0) yaw += 360;
+        yaw -= 90;
+        return yaw;
+    }
+
+    /**
+     * MT1 raw pose in inches, NO conversion applied — straight from the LL.
+     * Use this to sanity-check getMT1Pose()'s transform against known field spots.
+     */
+    public double[] getMT1PoseRaw() {
+        if (limelight == null) return null;
+
+        LLResult result = limelight.getLatestResult();
+        if (result == null) return null;
+
+        Pose3D botpose = result.getBotpose();
+        if (botpose == null) return null;
+
+        Position posIn = botpose.getPosition().toUnit(DistanceUnit.INCH);
+        return new double[]{ posIn.x, posIn.y };
+    }
+
+    // ── MT2 (kept for reference / rollback — not currently used) ─────────────
+
     public boolean hasMegaTagPose() {
         if (limelight == null) return false;
         LLResult result = limelight.getLatestResult();
         if (result == null) return false;
-        org.firstinspires.ftc.robotcore.external.navigation.Pose3D botpose =
-                result.getBotpose_MT2();
+        Pose3D botpose = result.getBotpose_MT2();
         return botpose != null;
     }
 
+    /**
+     * Converts the current MT2 botpose into Pinpoint field coordinates (inches).
+     * IMPORTANT: This does NOT push robot orientation into the Limelight itself.
+     * MT2 needs fresh yaw fed in via setRobotOrientation(...) BEFORE you call this.
+     */
     public double[] getMegaTagPose() {
         if (limelight == null) return null;
+
         LLResult result = limelight.getLatestResult();
-        if (result == null) return null;
+        if (result == null || !result.isValid()) return null;
 
-        // MegaTag2 requires the IMU orientation to be fed into the device
-        // immediately prior to querying this layout loop.
-        org.firstinspires.ftc.robotcore.external.navigation.Pose3D botpose =
-                result.getBotpose_MT2();
+        Pose3D botpose = result.getBotpose_MT2();
         if (botpose == null) return null;
-
         if (result.getFiducialResults() == null || result.getFiducialResults().isEmpty()) return null;
 
-        // Convert raw meters to inches
-        double rawXInches = botpose.getPosition().x * 39.3701;
-        double rawYInches = botpose.getPosition().y * 39.3701;
+        Position posIn = botpose.getPosition().toUnit(DistanceUnit.INCH);
+        double rawX = posIn.x;
+        double rawY = posIn.y;
 
-        if (Math.abs(rawXInches) < 0.01 && Math.abs(rawYInches) < 0.01) return null;
+        if (Math.abs(rawX) < 0.01 && Math.abs(rawY) < 0.01) return null;
 
-        double pinpointX = rawXInches * 2.295 + 46.0;
-        double pinpointY = rawYInches * 0.745 + 159.0;
+        double swappedX = rawY;
+        double swappedY = rawX;
+        double fieldX = swappedX + 72.0;
+        double fieldY = (-swappedY) + 72.0;
 
-        if (pinpointX < 0 || pinpointX > 144 || pinpointY < 0 || pinpointY > 144) return null;
+        if (fieldX < 0 || fieldX > 144 || fieldY < 0 || fieldY > 144) return null;
 
-        return new double[]{ pinpointX, pinpointY };
+        return new double[]{ fieldX, fieldY };
     }
 
-    /**
-     * Returns the field-relative yaw (heading) from MT2's botpose, in degrees [0, 360).
-     * Use this to seed Pinpoint's true heading when no other reference exists yet
-     * (e.g. before resetPosAndIMU has any real-world context).
-     */
     public double getMegaTagYaw() {
         if (limelight == null) return -1;
         LLResult result = limelight.getLatestResult();
         if (result == null) return -1;
 
-        org.firstinspires.ftc.robotcore.external.navigation.Pose3D botpose =
-                result.getBotpose_MT2();
+        Pose3D botpose = result.getBotpose_MT2();
         if (botpose == null) return -1;
-        if (result.getFiducialResults() == null || result.getFiducialResults().isEmpty()) return -1;
 
         double yaw = botpose.getOrientation().getYaw(AngleUnit.DEGREES);
         return ((yaw % 360) + 360) % 360;
@@ -236,20 +306,20 @@ public class Limelight {
 
     public double[] getMegaTagPoseRaw() {
         if (limelight == null) return null;
+
         LLResult result = limelight.getLatestResult();
         if (result == null) return null;
-        org.firstinspires.ftc.robotcore.external.navigation.Pose3D botpose =
-                result.getBotpose_MT2();
+        Pose3D botpose = result.getBotpose_MT2();
         if (botpose == null) return null;
 
-        double x = botpose.getPosition().x * 39.3701;
-        double y = botpose.getPosition().y * 39.3701;
-
-        return new double[]{ x, y };
+        Position posIn = botpose.getPosition().toUnit(DistanceUnit.INCH);
+        return new double[]{ posIn.x, posIn.y };
     }
 
+    // ── Snapshot helpers used by Teleop / TestLimelight ──────────────────────
+
     public double[] getSnapshotPose() {
-        return getMegaTagPose(); // getAveragedSnapshotPose() already calls this
+        return getMT1Pose();
     }
 
     public double[] getAveragedSnapshotPose(int samples) {
@@ -273,5 +343,4 @@ public class Limelight {
             limelight.updateRobotOrientation(yawDegrees);
         }
     }
-
 }

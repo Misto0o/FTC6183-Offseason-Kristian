@@ -8,8 +8,6 @@ import com.qualcomm.robotcore.hardware.HardwareMap;
 import com.qualcomm.robotcore.hardware.Servo;
 import org.firstinspires.ftc.teamcode.Utils.Aliance;
 import org.firstinspires.ftc.teamcode.Utils.Interpolator;
-import org.firstinspires.ftc.teamcode.Utils.ShooterTablesV2;
-import org.firstinspires.ftc.teamcode.Vision.Limelight;
 import org.firstinspires.ftc.teamcode.Utils.ShooterTables;
 
 /**
@@ -26,7 +24,7 @@ public class Turret {
     // turretOffSet maps the raw analog voltage (0-3.3V) to a 0-360 degree physical orientation.
     public static double turretOffSet    = 340; // DO NOT TOUCH unless needs to be re-calibrated
     // threshold defines the "acceptable" velocity error for the flywheels in ticks per second.
-    public static double threshold       = 10; // TODO tune this first shot is short sometimes
+    public static double threshold       = 10;
     public static double turretKp        = 0.02;
     public static double turretKd        = 0.005;
 
@@ -38,8 +36,6 @@ public class Turret {
     public static double BLUE_GOAL_Y = 144;
     public static double RED_GOAL_X = 144;
     public static double RED_GOAL_Y = 144;
-    //public static double BLUE_GOAL_X = 27,   BLUE_GOAL_Y = 124; // For testing
-    //public static double RED_GOAL_X  = 121, RED_GOAL_Y  = 121;  // Fall Back incase new ones dont work
 
     // ── Debug flag ────────────────────────────────────────────────────────────
     public static boolean DEBUG_AIM = false;
@@ -90,10 +86,10 @@ public class Turret {
         calibrateToParkedPosition();
 
         // Populate lookup tables from ShooterTables utility.
-        ShooterTablesV2.loadBlueShooter(shooterBlue);
-        ShooterTablesV2.loadBlueHood(hoodBlue);
-        ShooterTablesV2.loadRedShooter(shooterRed);
-        ShooterTablesV2.loadRedHood(hoodRed);
+        ShooterTables.loadBlueShooter(shooterBlue);
+        ShooterTables.loadBlueHood(hoodBlue);
+        ShooterTables.loadRedShooter(shooterRed);
+        ShooterTables.loadRedHood(hoodRed);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -155,7 +151,7 @@ public class Turret {
         // Calculate turret angle
         double turretAngle = angleToGoal - robotHeading + 270;
         turretAngle = normalizeAngle360(turretAngle);
-        turretAngle = Math.max(180, Math.min(360, turretAngle));
+        turretAngle = Math.max(80, Math.min(350, turretAngle)); // TestTurret Clamps
         setToAngle(turretAngle);
     }
     /**
@@ -235,7 +231,7 @@ public class Turret {
     // ─────────────────────────────────────────────────────────────────────────
     public void setToAngle(double angle) {
         // Clamp to [0, 360] to respect physical limits
-        turretAngleSet = Math.max(180, Math.min(360, angle));
+        turretAngleSet = Math.max(80, Math.min(350, angle));
     }
 
     public double getTurretAngleSet() {

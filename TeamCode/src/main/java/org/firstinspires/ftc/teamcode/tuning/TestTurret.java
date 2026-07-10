@@ -90,6 +90,12 @@ public class TestTurret extends OpMode {
         boolean dpadUp    = gamepad1.dpad_up;
         boolean dpadLeft  = gamepad1.dpad_left;
         boolean dpadRight = gamepad1.dpad_right;
+        boolean leftBumper = gamepad1.left_bumper;
+
+        if (leftBumper && !prevLeftBumper) {
+            motorEnabled = !motorEnabled;
+            gamepad1.rumbleBlips(motorEnabled ? 2 : 1);
+        }
 
         // ── SQUARE: toggle goal tracking ──────────────────────────────────────
         if (square && !prevSquare) {
@@ -128,20 +134,13 @@ public class TestTurret extends OpMode {
                     new Pose2D(DistanceUnit.INCH, robotStartX, robotStartY, AngleUnit.DEGREES, 0));
         }
 
-        Turret.INSTANCE.setVelocity(0);
-        Turret.INSTANCE.periodic();
-
-        if (!motorEnabled) {
-            // Override — cut turret power so it can be moved freely by hand
-            Turret.INSTANCE.cutPower();
-        }
-
         prevSquare    = square;
         prevCircle    = circle;
         prevTriangle  = triangle;
         prevDpadUp    = dpadUp;
         prevDpadLeft  = dpadLeft;
         prevDpadRight = dpadRight;
+        prevLeftBumper = leftBumper;
 
         // ── Drivetrain ────────────────────────────────────────────────────────
         Drivetrain.getInstance().drive(
@@ -158,11 +157,21 @@ public class TestTurret extends OpMode {
             Turret.INSTANCE.aimAtGoal(Aliance.BLUE, 20);
         }
         // When not tracking, turret holds whatever setToAngle was last called with.
-        // Motor is still powered by periodic() so it holds position.
-        // Physically push it to find limits — PD will resist but you can overpower it.
+        // Motor is still powered by periodic() so it holds position (if motorEnabled).
+        // Physically push it to find limits — PD will resist unless motorEnabled is OFF.
 
         Turret.INSTANCE.setVelocity(0);
-        Turret.INSTANCE.periodic();
+
+        // FIXED: this used to be duplicated below as an unconditional
+        // Turret.INSTANCE.periodic() call, which powered the motor regardless
+        // of motorEnabled and silently defeated the LB "free to move by hand"
+        // toggle. There is now exactly one periodic()/cutPower() call per loop,
+        // gated correctly on motorEnabled.
+        if (motorEnabled) {
+            Turret.INSTANCE.periodic(); // PD control active
+        } else {
+            Turret.INSTANCE.cutPower(); // free to move by hand
+        }
 
         // ── Telemetry ─────────────────────────────────────────────────────────
         telemetry.addLine("════ TURRET ════");
