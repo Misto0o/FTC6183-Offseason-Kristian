@@ -44,6 +44,8 @@ public class Teleop extends OpMode {
     public static double HOOD_OVERRIDE        = -1;  // -1 = use table, 0.0-1.0 = manual
     public static double VELO_OVERRIDE        = -1;  // -1 = use table, >0 = manual cap
 
+    private int shotsFired = 0;
+
     // ── Alliance ──────────────────────────────────────────────────────────────
     private Aliance alliance = Aliance.BLUE;
 
@@ -181,6 +183,13 @@ public class Teleop extends OpMode {
     public void start() {
         MatchPattern.reset();
         Turret.INSTANCE.setToAngle(Turret.TURRET_PARKED_ANGLE);
+        Limelight.INSTANCE.setRobotOrientation(Pinpoint.INSTANCE.getHeading());
+        double[] mt1Start = Limelight.INSTANCE.getAveragedSnapshotPose(5);
+        if (mt1Start != null) {
+            Pinpoint.INSTANCE.updatePosition(new Pose2D(
+                    DistanceUnit.INCH, mt1Start[0], mt1Start[1],
+                    AngleUnit.DEGREES, Pinpoint.INSTANCE.getHeading()));
+        }
         // IMPORTANT: Perform a pre-match scan of the spindexer to identify pre-loaded balls.
         for (Spindexer.Position pos : Spindexer.Position.values()) {
             Spindexer.INSTANCE.setToPosition(pos);
@@ -319,10 +328,18 @@ public class Teleop extends OpMode {
         if (dl && !lastDL) { enterIntakeMode(); intakeRunning = true; Intake.INSTANCE.on(); }
         if (dr && !lastDR) enterShootMode();
 
-        // ── Left trigger: reverse intake ──────────────────────────────────────
+        // ── Left trigger: Re-home spindexer if the mount slipped ──────────────
         if (lt && !lastLT) {
-            if (intakeRunning) Intake.INSTANCE.reverse();
-            else               Intake.INSTANCE.idle();
+            Spindexer.INSTANCE.togglePositionFlip();
+
+            // Re-command the current mode so every subsystem updates immediately.
+            if (mode == RobotMode.SHOOT) {
+                enterShootMode();
+            } else {
+                enterIntakeMode();
+            }
+
+            gamepad1.rumbleBlips(2);
         }
 
         if (rt && !lastRT) {
@@ -505,16 +522,19 @@ public class Teleop extends OpMode {
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // TELEMETRY
-        // ─────────────────────────────────────────────────────────────────────
+// MATCH TELEMETRY
+// ─────────────────────────────────────────────────────────────────────
 
         double llDist = Limelight.INSTANCE.distanceFromTag(goalId);
 
         Spindexer.DetectedColor[] balls = Spindexer.INSTANCE.getBallAtPosition();
 
         int ballCount = 0;
-        for (Spindexer.DetectedColor c : balls)
-            if (c != Spindexer.DetectedColor.EMPTY) ballCount++;
+        for (Spindexer.DetectedColor c : balls) {
+            if (c != Spindexer.DetectedColor.EMPTY) {
+                ballCount++;
+            }
+        }
 
         String flywheelStatus =
                 flywheelState == 0 ? "OFF" :
@@ -525,54 +545,68 @@ public class Teleop extends OpMode {
                 flywheelState == 2 &&
                         Turret.INSTANCE.isSettled();
 
-        telemetry.addLine("════════ MATCH STATUS ════════");
+        double[] mt1 = Limelight.INSTANCE.getMT1Pose();
+
+        telemetry.addLine("══════ MATCH STATUS ══════");
         telemetry.addData("Mode", mode);
         telemetry.addData("Pattern",
                 MatchPattern.getPattern() +
                         (MatchPattern.isLocked() ? " 🔒" : ""));
         telemetry.addData("Ready", readyToShoot ? "✓ YES" : "NO");
 
-        telemetry.addLine();
+        telemetry.addLine("──── LOCALIZATION ─────");
+        telemetry.addData("Pinpoint",
+                String.format("(%.1f, %.1f) %.1f°",
+                        px, py,
+                        Math.toDegrees(Pinpoint.INSTANCE.getHeading())));
 
-        telemetry.addLine("════════ SHOOTER ═════════════");
+        if (mt1 != null) {
+            telemetry.addData("MT1",
+                    String.format("(%.1f, %.1f)",
+                            mt1[0], mt1[1]));
+        } else {
+            telemetry.addData("MT1", "NO DATA");
+        }
+
+        telemetry.addData("Drift",
+                mt1 != null
+                        ? String.format("%.1f, %.1f",
+                        px - mt1[0],
+                        py - mt1[1])
+                        : "N/A");
+
+        telemetry.addLine("──── SHOOTER ─────");
         telemetry.addData("Flywheel", flywheelStatus);
         telemetry.addData("RPM",
                 String.format("%d / %d",
                         (int) Turret.INSTANCE.getVelocity(),
                         (int) Turret.INSTANCE.distanceToVelocity(px, py, alliance)));
         telemetry.addData("AutoShoot", shootState);
-
-        telemetry.addLine();
-
-        telemetry.addLine("════════ BALLS ═══════════════");
-        telemetry.addData("Count", ballCount + "/3");
-        telemetry.addData("Slot 1", balls[0]);
-        telemetry.addData("Slot 2", balls[1]);
-        telemetry.addData("Slot 3", balls[2]);
-
-        telemetry.addLine();
-
-        telemetry.addLine("════════ ROBOT ═══════════════");
         telemetry.addData("Distance",
-                llDist > 0 ? String.format("%.1f in", llDist) : "NO TARGET");
-        telemetry.addData("Heading",
-                String.format("%.1f°", Pinpoint.INSTANCE.getHeading()));
-        telemetry.addData("Pos",
-                String.format("(%.0f, %.0f)", px, py));
-        // CHANGED: was MT2 raw/converted — now shows MT1, matching what
-        // getSnapshotPose() actually uses for relocalization above.
-        double[] raw = Limelight.INSTANCE.getMT1PoseRaw();
-        double[] converted = Limelight.INSTANCE.getMT1Pose();
-        if (raw != null) {
-            telemetry.addData("MT1 raw inches", String.format("(%.1f, %.1f)", raw[0], raw[1]));
-        }
-        if (converted != null) {
-            telemetry.addData("MT1 converted", String.format("(%.1f, %.1f)", converted[0], converted[1]));
-        }
+                llDist > 0
+                        ? String.format("%.1f in", llDist)
+                        : "NO TARGET");
 
-        telemetry.addData("Turret Target", Turret.INSTANCE.getTurretAngleSet());
-        telemetry.addData("Turret Actual", Turret.INSTANCE.getTurretAngle());
-        telemetry.addData("TurretOffset", Turret.INSTANCE.getTurretOffSet());
+        telemetry.addLine("──── TURRET ─────");
+        telemetry.addData("Target",
+                String.format("%.1f°", Turret.INSTANCE.getTurretAngleSet()));
+        telemetry.addData("Actual",
+                String.format("%.1f°", Turret.INSTANCE.getTurretAngle()));
+        telemetry.addData("Offset",
+                String.format("%.1f°", Turret.INSTANCE.getTurretOffSet()));
+        telemetry.addData("Settled",
+                Turret.INSTANCE.isSettled() ? "✓" : "NO");
+
+        telemetry.addData("Balls",   String.format("%d/3  [%s|%s|%s]",
+                ballCount,
+                balls[0] == Spindexer.DetectedColor.EMPTY ? "__" : balls[0].name().substring(0,2),
+                balls[1] == Spindexer.DetectedColor.EMPTY ? "__" : balls[1].name().substring(0,2),
+                balls[2] == Spindexer.DetectedColor.EMPTY ? "__" : balls[2].name().substring(0,2)));
+
+        telemetry.addData("Shots",   String.format("%d fired | Auto: %s", shotsFired, shootState));
+
+        telemetry.addData("Flipped",
+                Spindexer.positionsFlipped ? "YES" : "NO");
 
         telemetry.update();
 
@@ -650,6 +684,7 @@ public class Teleop extends OpMode {
                 if (flickTimer.seconds() >= FLICK_DOWN_SEC) {
                     // Mark current slot empty.
                     Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY);
+                    shotsFired++; // track how many balls have actually been fired
 
                     // IMPORTANT: Position type toggling ensures the spindexer centers correctly for the next ball.
                     int shotSlot = Spindexer.INSTANCE.getPosition().ordinal();
@@ -748,6 +783,7 @@ public class Teleop extends OpMode {
         dwelling      = false;
         shootState    = ShootState.IDLE;
         flickState    = FlickState.IDLE;
+        shotsFired = 0; // Reset when in shoot mode
         Intake.INSTANCE.idle();
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
         int next = nextShootSlot();
@@ -811,18 +847,14 @@ public class Teleop extends OpMode {
                 case PPG: order = new Spindexer.DetectedColor[]{ Spindexer.DetectedColor.PURPLE, Spindexer.DetectedColor.PURPLE, Spindexer.DetectedColor.GREEN  }; break;
                 default:  order = null; break;
             }
-            if (order != null) {
-                int shotCount = 0;
-                for (Spindexer.DetectedColor c : slots)
-                    if (c == Spindexer.DetectedColor.EMPTY) shotCount++;
-                if (shotCount < order.length) {
-                    Spindexer.DetectedColor needed = order[shotCount];
-                    for (int i = 0; i < slots.length; i++)
-                        if (slots[i] == needed) return i;
-                }
+            if (order != null && shotsFired < order.length) {
+                Spindexer.DetectedColor needed = order[shotsFired];
+                for (int i = 0; i < slots.length; i++)
+                    if (slots[i] == needed) return i;
             }
         }
 
+        // Fallback — fire whatever is available
         for (int i = 0; i < slots.length; i++)
             if (slots[i] != Spindexer.DetectedColor.EMPTY) return i;
         return -1;

@@ -24,14 +24,14 @@ public class Spindexer {
 
     // ── Servo positions ───────────────────────────────────────────────────────
     // IMPORTANT: Intake positions align slots with the front intake.
-    public static double intakePositionOne   = 0.093;
-    public static double intakePositionTwo   = 0.3875;
-    public static double intakePositionThree = 0.68;
-    
+    public static double intakePositionOne   = 0.1;
+    public static double intakePositionTwo   = 0.4;
+    public static double intakePositionThree = 0.7;
+
     // IMPORTANT: Shoot positions align slots with the transfer/flywheel exit.
-    public static double shootPositionOne    = 0.53;
-    public static double shootPositionTwo    = 0.83;
-    public static double shootPositionThree  = 0.23;
+    public static double shootPositionOne    = 0.253;
+    public static double shootPositionTwo    = 0.535;
+    public static double shootPositionThree  = 0.835;
 
     public static final Spindexer INSTANCE = new Spindexer();
     private Spindexer() {}
@@ -48,6 +48,8 @@ public class Spindexer {
 
     public static Position     currentPosition = Position.POSITION_ONE;
     public static PositionType positionType    = PositionType.INTAKE;
+
+    public static boolean positionsFlipped = false;
 
     public enum Position {
         POSITION_ONE, POSITION_TWO, POSITION_THREE;
@@ -102,6 +104,7 @@ public class Spindexer {
         positionType = PositionType.INTAKE;
         currentPosition = Position.POSITION_ONE;
         spinServo.setPosition(intakePositionOne);
+        positionsFlipped = false;
     }
 
     /**
@@ -109,21 +112,54 @@ public class Spindexer {
      */
     public void setToPosition(Position position) {
         currentPosition = position;
+
+        PositionType type = positionType;
+
+        // If the spindexer slipped one whole mode, swap intake/shoot mappings.
+        if (positionsFlipped) {
+            type = (type == PositionType.INTAKE)
+                    ? PositionType.SHOOT
+                    : PositionType.INTAKE;
+        }
+
         double servoPos;
-        if (positionType == PositionType.INTAKE) {
+
+        if (type == PositionType.INTAKE) {
             switch (position) {
-                case POSITION_ONE:   servoPos = intakePositionOne;   break;
-                case POSITION_TWO:   servoPos = intakePositionTwo;   break;
-                default:             servoPos = intakePositionThree; break;
+                case POSITION_ONE:
+                    servoPos = intakePositionOne;
+                    break;
+                case POSITION_TWO:
+                    servoPos = intakePositionTwo;
+                    break;
+                default:
+                    servoPos = intakePositionThree;
+                    break;
             }
         } else {
             switch (position) {
-                case POSITION_ONE:   servoPos = shootPositionOne;   break;
-                case POSITION_TWO:   servoPos = shootPositionTwo;   break;
-                default:             servoPos = shootPositionThree; break;
+                case POSITION_ONE:
+                    servoPos = shootPositionOne;
+                    break;
+                case POSITION_TWO:
+                    servoPos = shootPositionTwo;
+                    break;
+                default:
+                    servoPos = shootPositionThree;
+                    break;
             }
         }
-        if (spinServo != null) spinServo.setPosition(servoPos);
+
+        if (spinServo != null) {
+            spinServo.setPosition(servoPos);
+        }
+    }
+
+    public void togglePositionFlip() {
+        positionsFlipped = !positionsFlipped;
+
+        // Re-command the current position using the new mapping.
+        setToPosition(currentPosition);
     }
 
     /**

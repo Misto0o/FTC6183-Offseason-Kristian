@@ -173,8 +173,7 @@ public class Limelight {
         return null;
     }
 
-    // ── MT1 -> field-corner-origin (Pinpoint-style) conversion ──────────────
-    // This is your friend's CONFIRMED WORKING transform (from their LimeLight.java,
+    // ── MT1 -> field-corner-origin (Pinpoint-style) conversion ─────────────
     // translateLimelightPoseToPedro), ported from Pedro-Pose-returning form into
     // plain {x, y, headingDeg} doubles so it drops straight into
     // Pinpoint.relocalizePositionFromTag(x, y) / Pinpoint.updatePosition(...).

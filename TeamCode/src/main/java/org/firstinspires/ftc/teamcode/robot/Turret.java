@@ -25,7 +25,7 @@ public class Turret {
     public static double turretOffSet    = 340; // DO NOT TOUCH unless needs to be re-calibrated
     // threshold defines the "acceptable" velocity error for the flywheels in ticks per second.
     public static double threshold       = 10;
-    public static double turretKp        = 0.02;
+    public static double turretKp        = 0.05;
     public static double turretKd        = 0.005;
 
     public static double TURRET_PARKED_ANGLE = 270.0;
@@ -135,24 +135,30 @@ public class Turret {
         double goalY = (aliance == Aliance.BLUE) ? BLUE_GOAL_Y : RED_GOAL_Y;
         double robotX = Pinpoint.INSTANCE.getPosX();
         double robotY = Pinpoint.INSTANCE.getPosY();
-        double robotHeading = Pinpoint.INSTANCE.getHeading();
-
-        // FIX: Try negating the heading
-        // robotHeading = -robotHeading;  // Uncomment this line
-
-        // Normalize to [0, 360)
-        robotHeading = normalizeAngle360(robotHeading);
+        double robotHeading = normalizeAngle360(Pinpoint.INSTANCE.getHeading());
 
         double deltaX = goalX - robotX;
         double deltaY = goalY - robotY;
-        double angleToGoal = Math.toDegrees(Math.atan2(deltaY, deltaX));
-        angleToGoal = normalizeAngle360(angleToGoal);
+        double angleToGoal = normalizeAngle360(Math.toDegrees(Math.atan2(deltaY, deltaX)));
 
-        // Calculate turret angle
-        double turretAngle = angleToGoal - robotHeading + 270;
-        turretAngle = normalizeAngle360(turretAngle);
-        turretAngle = Math.max(80, Math.min(350, turretAngle)); // TestTurret Clamps
-        setToAngle(turretAngle);
+        double turretAngle = normalizeAngle360(angleToGoal - robotHeading + 270);
+
+        // ── Nearest reachable angle within physical limits ──────────────────────
+        // Instead of hard clamping (which causes snapping), find whether the target
+        // is reachable, and if not, which limit is physically closer to avoid
+        // the turret trying to spin the wrong way around.
+        double minAngle = 80.0;
+        double maxAngle = 350.0;
+
+        if (turretAngle >= minAngle && turretAngle <= maxAngle) {
+            // Target is within limits — go straight there
+            setToAngle(turretAngle);
+        } else {
+            // Target is outside limits — find nearest limit by shortest angular distance
+            double errorToMin = Math.abs(normalizeAngle(turretAngle - minAngle));
+            double errorToMax = Math.abs(normalizeAngle(turretAngle - maxAngle));
+            setToAngle(errorToMin < errorToMax ? minAngle : maxAngle);
+        }
     }
     /**
      * Normalizes any angle to the range [-180, 180].
@@ -230,10 +236,9 @@ public class Turret {
     // Turret Position Control
     // ─────────────────────────────────────────────────────────────────────────
     public void setToAngle(double angle) {
-        // Clamp to [0, 360] to respect physical limits
-        turretAngleSet = Math.max(80, Math.min(350, angle));
+        // Safety clamp only — aimAtGoal() handles proper limit logic
+        turretAngleSet = Math.max(0, Math.min(360, angle));
     }
-
     public double getTurretAngleSet() {
         return turretAngleSet;
     }

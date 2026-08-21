@@ -7,7 +7,6 @@ import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.telemetry.TelemetryManager;
 import com.bylazar.telemetry.PanelsTelemetry;
 import org.firstinspires.ftc.teamcode.Pedro.Constants;
-import com.pedropathing.geometry.BezierCurve;
 import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.paths.PathChain;
@@ -21,31 +20,72 @@ import org.firstinspires.ftc.teamcode.robot.Spindexer;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
 
+/**
+ * SIMPLIFIED BlueNineBall Auto.
+ *
+ * Philosophy: this is just Teleop's mech logic (intake dwell/stamp, flick,
+ * flywheel wait) wired up to fire automatically instead of on button press,
+ * with PathChains driving between spots instead of a joystick. No turret
+ * aiming -- turret stays parked at TURRET_PARKED_ANGLE the whole match, same
+ * as Teleop when turretLock is on.
+ *
+ * Flow is just: DRIVE -> INTAKE UNTIL FULL -> DRIVE -> SHOOT 3 -> repeat -> DONE.
+ */
 @Autonomous(name = "BlueNineBall", group = "Autonomous")
 @Configurable // Panels
 public class BlueNineBallAuto extends OpMode {
+
+    // ── Tunables (same numbers/spirit as Teleop) ────────────────────────────
+    public static double INTAKE_DWELL_SEC     = 0.3;   // matches Teleop.INTAKE_DWELL_SEC
+    public static double FLICK_UP_SEC         = 0.9;   // matches Teleop.FLICK_UP_SEC
+    public static double FLICK_DOWN_SEC       = 1.5;   // matches Teleop.FLICK_DOWN_SEC
+    public static double SPINDEXER_SETTLE_SEC = 0.25;  // matches Teleop.SPINDEXER_SETTLE_SEC
+    public static double SHOOT_VELOCITY       = 1075;
+    // Max time to spend hunting for the last ball(s) before giving up and
+    // shooting whatever's actually in the spindexer. Prevents a missed ball
+    // from stalling the whole auto.
+    public static double PICKUP_TIMEOUT_SEC   = 3.0;
+    // Cap on drivetrain power while crawling through the pickup zone, so the
+    // bot doesn't outrun the intake. 1.0 = full speed (used for every other
+    // leg). Tune this down further if it's still rolling past balls.
+    public static double PICKUP_MAX_POWER     = 0.85;
+
     private TelemetryManager panelsTelemetry;
     public Follower follower;
-    private int pathState;
     private Paths paths;
     private Timer pathTimer;
 
-    private enum FlickState {WAIT_RPM, FLICK_UP, FLICK_DOWN}
+    // ── Simple top-level sequence ────────────────────────────────────────────
+    private enum Step {
+        DRIVE_TO_PRELOAD_SHOT, SHOOT_PRELOAD,
+        DRIVE_TO_PICKUP_3, INTAKE_3, DRIVE_TO_SHOOT_3, SHOOT_3,
+        DRIVE_TO_9, PICKUP_9, DRIVE_TO_SHOOT_9, SHOOT_9,
+        DONE
+    }
+    private Step step = Step.DRIVE_TO_PRELOAD_SHOT;
 
-    private FlickState flickState = FlickState.WAIT_RPM;
-    private final Timer flickTimer = new Timer();
-    private int ballsShot = 0;
-
+    // ── Intake dwell sub-state (copied straight from Teleop) ────────────────
     private boolean dwelling = false;
     private final Timer dwellTimer = new Timer();
 
-    // ── Spindexer settle tracking (mirrors Teleop) ──────────────────────────
-    // Prevents the fork from firing on a slot the spindexer hasn't actually
-    // finished physically arriving at yet.
-    public static double SPINDEXER_SETTLE_SEC = 0.25;
+    // ── Flick sub-state (copied straight from Teleop's FlickState) ──────────
+    private enum FlickState { IDLE, WAIT_UP, WAIT_DOWN }
+    private FlickState flickState = FlickState.IDLE;
+    private final Timer flickTimer = new Timer();
+    private boolean transferDown = true;
+
+    // ── Shoot-3 bookkeeping ──────────────────────────────────────────────────
+    private int ballsShotThisVolley = 0;
+    private boolean waitingForFlywheel = false;
+
+    // ── Spindexer settle tracking (copied straight from Teleop) ─────────────
     private boolean spindexerSettled = true;
     private final Timer spindexerSettleTimer = new Timer();
     private int lastCommandedSlot = -1;
+
+    // ── Pickup stall timeout tracking ────────────────────────────────────────
+    private final Timer pickupStallTimer = new Timer();
+    private boolean pickupStallTimerStarted = false;
 
     @Override
     public void init() {
@@ -54,7 +94,6 @@ public class BlueNineBallAuto extends OpMode {
         follower.setStartingPose(new Pose(20.485549132947973, 122.31213872832369, Math.toRadians(138)));
         paths = new Paths(follower);
         pathTimer = new Timer();
-        pathState = 0;
 
         Intake.INSTANCE.init(hardwareMap);
         Transfer.INSTANCE.initialize(hardwareMap);
@@ -66,6 +105,7 @@ public class BlueNineBallAuto extends OpMode {
                 hardwareMap.get(NormalizedColorSensor.class, "rightColorSensor")
         );
 
+        // Turret parked the whole match -- no aiming in this auto.
         Turret.INSTANCE.setToAngle(Turret.TURRET_PARKED_ANGLE);
         Turret.INSTANCE.setHoodPosition(1.0);
 
@@ -75,23 +115,27 @@ public class BlueNineBallAuto extends OpMode {
 
     @Override
     public void start() {
-        // Pre-scan preloaded balls so they are properly stamped.
+        // Pre-scan preloaded balls, same as Teleop's start().
         for (Spindexer.Position pos : Spindexer.Position.values()) {
             Spindexer.INSTANCE.setToPosition(pos);
-            try {
-                Thread.sleep(400);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            try { Thread.sleep(400); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             Spindexer.INSTANCE.setColor(pos, Spindexer.INSTANCE.readCurrentColor());
         }
         Spindexer.INSTANCE.periodic();
 
-        // Ensure starting in INTAKE pos as requested
         Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
         Spindexer.INSTANCE.setToPosition(Spindexer.Position.POSITION_ONE);
 
-        setPathState(0);
+        // Spin the flywheel up immediately and leave it running the whole
+        // match -- no more spin-up/spin-down between volleys. This means by
+        // the time we reach each shoot spot the wheel is already at speed,
+        // instead of waiting on the gate in runShootVolley().
+        Turret.INSTANCE.setVelocity(SHOOT_VELOCITY);
+
+        follower.setMaxPower(1.0);
+        follower.followPath(paths.ShootPreload, true);
+        step = Step.DRIVE_TO_PRELOAD_SHOT;
+        pathTimer.resetTimer();
     }
 
     @Override
@@ -100,31 +144,263 @@ public class BlueNineBallAuto extends OpMode {
         Turret.INSTANCE.periodic();
         Spindexer.INSTANCE.periodic();
 
-        // Track settle timer every loop, same as Teleop.
         if (!spindexerSettled && spindexerSettleTimer.getElapsedTimeSeconds() >= SPINDEXER_SETTLE_SEC) {
             spindexerSettled = true;
         }
 
-        autonomousPathUpdate();
+        runSequence();
 
-        panelsTelemetry.debug("Path State", pathState);
+        panelsTelemetry.debug("Step", step);
         panelsTelemetry.debug("X", follower.getPose().getX());
         panelsTelemetry.debug("Y", follower.getPose().getY());
         panelsTelemetry.debug("Heading", follower.getPose().getHeading());
         panelsTelemetry.debug("Spindexer Full", Spindexer.INSTANCE.getFull());
-        panelsTelemetry.debug("Balls Shot", ballsShot);
         panelsTelemetry.update(telemetry);
     }
 
-    public void setPathState(int state) {
-        pathState = state;
-        pathTimer.resetTimer();
+    // ─────────────────────────────────────────────────────────────────────────
+    // Top-level sequence -- just: drive, intake, drive, shoot, repeat.
+    // ─────────────────────────────────────────────────────────────────────────
+    private void runSequence() {
+        switch (step) {
+
+            case DRIVE_TO_PRELOAD_SHOT:
+                if (!follower.isBusy()) {
+                    startShootVolley();
+                    step = Step.SHOOT_PRELOAD;
+                }
+                break;
+
+            case SHOOT_PRELOAD:
+                if (runShootVolley()) {
+                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+                    goToFreeSlotOrStay();
+                    Intake.INSTANCE.on();
+                    follower.setMaxPower(PICKUP_MAX_POWER);
+                    follower.followPath(paths.PickupThree, true);
+                    step = Step.DRIVE_TO_PICKUP_3;
+                }
+                break;
+
+            case DRIVE_TO_PICKUP_3:
+                // Run intake logic *while* driving, exactly like Teleop lets you
+                // drive and intake at the same time.
+                runIntakeDwell();
+                if (!follower.isBusy() || Spindexer.INSTANCE.getFull()) {
+                    step = Step.INTAKE_3;
+                    // Start the stall clock only now -- once we're actually
+                    // stationary/hunting, not during the drive over.
+                    startPickupStallTimer();
+                }
+                break;
+
+            case INTAKE_3:
+                // Keep dwelling in place until full, in case the path finished
+                // before all 3 balls were picked up. If we truly can't find the
+                // last ball within PICKUP_TIMEOUT_SEC, stop waiting and shoot
+                // whatever we've got rather than stalling the whole auto.
+                runIntakeDwell();
+                if (Spindexer.INSTANCE.getFull() || pickupStalled()) {
+                    Intake.INSTANCE.idle();
+                    follower.setMaxPower(1.0);
+                    follower.followPath(paths.Shoot3, true);
+                    step = Step.DRIVE_TO_SHOOT_3;
+                }
+                break;
+
+            case DRIVE_TO_SHOOT_3:
+                if (!follower.isBusy()) {
+                    startShootVolley();
+                    step = Step.SHOOT_3;
+                }
+                break;
+
+            case SHOOT_3:
+                if (runShootVolley()) {
+                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+                    goToFreeSlotOrStay();
+                    Intake.INSTANCE.on();
+                    follower.setMaxPower(1.0);
+                    follower.followPath(paths.DriveToNine, true);
+                    step = Step.DRIVE_TO_9;
+                }
+                break;
+
+            case DRIVE_TO_9:
+                runIntakeDwell();
+                if (!follower.isBusy()) {
+                    follower.setMaxPower(PICKUP_MAX_POWER);
+                    follower.followPath(paths.PickupNine, true);
+                    step = Step.PICKUP_9;
+                    pickupStallTimerStarted = false; // will lazy-start once path finishes below
+                }
+                break;
+
+            case PICKUP_9:
+                runIntakeDwell();
+                // Start the stall clock only once we've stopped actually
+                // driving/searching -- not during the travel itself.
+                if (!follower.isBusy() && !pickupStallTimerStarted) {
+                    startPickupStallTimer();
+                }
+                if (Spindexer.INSTANCE.getFull() || (!follower.isBusy() && pickupStalled())) {
+                    Intake.INSTANCE.idle();
+                    follower.setMaxPower(1.0);
+                    follower.followPath(paths.ShootNineAndEnd, true);
+                    step = Step.DRIVE_TO_SHOOT_9;
+                }
+                break;
+
+            case DRIVE_TO_SHOOT_9:
+                if (!follower.isBusy()) {
+                    startShootVolley();
+                    step = Step.SHOOT_9;
+                }
+                break;
+
+            case SHOOT_9:
+                if (runShootVolley()) {
+                    Turret.INSTANCE.setVelocity(0);
+                    step = Step.DONE;
+                }
+                break;
+
+            case DONE:
+                panelsTelemetry.debug("Status", "All 9 balls scored - Auto Complete");
+                break;
+        }
     }
 
-    /**
-     * Commands the spindexer to the given slot and marks it as unsettled,
-     * resetting the settle timer -- mirrors Teleop's slot-change tracking.
-     */
+    @Override
+    public void stop() {
+        Turret.INSTANCE.setVelocity(0);
+        Intake.INSTANCE.idle();
+        // Park spindexer in intake mode so teleop inherits a clean state
+        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
+        Spindexer.INSTANCE.setToPosition(Spindexer.Position.POSITION_ONE);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Shooting -- same shape as Teleop: enter shoot mode, spin flywheel, wait
+    // for it to reach speed, flick, confirm, repeat until 3 fired or empty.
+    // ─────────────────────────────────────────────────────────────────────────
+    private void startShootVolley() {
+        Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
+        ballsShotThisVolley = 0;
+        // Flywheel is already spinning continuously (set once in start()), so
+        // this just double-checks it's at speed rather than waiting on a
+        // fresh spin-up.
+        waitingForFlywheel = true;
+        commandSlotToFilled();
+    }
+
+    /** @return true once 3 balls are fired (or spindexer runs empty). */
+    private boolean runShootVolley() {
+        if (ballsShotThisVolley >= 3 || Spindexer.INSTANCE.getEmpty()) {
+            // NOTE: flywheel is intentionally left spinning here -- it only
+            // gets cut in SHOOT_9 (end of match) or stop().
+            flickState = FlickState.IDLE;
+            transferDown = true;
+            return true;
+        }
+
+        // Always re-check which slot is actually loaded (Teleop does the same).
+        commandSlotToFilled();
+
+        switch (flickState) {
+            case IDLE:
+                if (waitingForFlywheel) {
+                    if (Turret.INSTANCE.getVelocity() >= SHOOT_VELOCITY - 25 && spindexerSettled) {
+                        waitingForFlywheel = false;
+                    } else {
+                        break;
+                    }
+                }
+                transferDown = false;
+                Transfer.INSTANCE.transferUpAggressive();
+                flickTimer.resetTimer();
+                flickState = FlickState.WAIT_UP;
+                break;
+
+            case WAIT_UP:
+                Transfer.INSTANCE.transferUpAggressive();
+                if (flickTimer.getElapsedTimeSeconds() >= FLICK_UP_SEC) {
+                    Transfer.INSTANCE.transferDownAggressive();
+                    flickTimer.resetTimer();
+                    flickState = FlickState.WAIT_DOWN;
+                }
+                break;
+
+            case WAIT_DOWN:
+                if (flickTimer.getElapsedTimeSeconds() >= FLICK_DOWN_SEC) {
+                    Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY);
+                    Spindexer.INSTANCE.periodic();
+
+                    ballsShotThisVolley++;
+                    transferDown = true;
+                    flickState = FlickState.IDLE;
+                    waitingForFlywheel = true; // re-confirm speed before next ball, like Teleop
+                }
+                break;
+        }
+        return false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Intake dwell -- copied straight from Teleop's per-loop intake block.
+    // ─────────────────────────────────────────────────────────────────────────
+    private void runIntakeDwell() {
+        Intake.INSTANCE.on();
+        if (Spindexer.INSTANCE.getPositionType() != Spindexer.PositionType.INTAKE) return;
+        if (Spindexer.INSTANCE.getFull()) return;
+
+        Spindexer.DetectedColor seen = Spindexer.INSTANCE.readCurrentColor();
+
+        if (!dwelling) {
+            dwelling = true;
+            dwellTimer.resetTimer();
+            return;
+        }
+
+        if (dwellTimer.getElapsedTimeSeconds() >= INTAKE_DWELL_SEC) {
+            Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), seen);
+            dwelling = false;
+            Spindexer.INSTANCE.periodic();
+
+            if (Spindexer.INSTANCE.getFull()) return;
+
+            if (seen != Spindexer.DetectedColor.EMPTY) {
+                goToFreeSlotOrStay();
+            }
+            // If EMPTY, stay put and dwell again next loop -- same as Teleop.
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Slot helpers -- wrap Spindexer.setToPosition with the settle-timer
+    // tracking, same idea as Teleop's inline lastCommandedSlot logic.
+    // ─────────────────────────────────────────────────────────────────────────
+    private void goToFreeSlotOrStay() {
+        int free = Spindexer.INSTANCE.freePosition();
+        if (free != -1) commandSlot(free);
+    }
+
+    private void commandSlotToFilled() {
+        int filled = Spindexer.INSTANCE.filledPosition();
+        if (filled != -1) commandSlot(filled);
+    }
+
+    private void startPickupStallTimer() {
+        pickupStallTimer.resetTimer();
+        pickupStallTimerStarted = true;
+    }
+
+    /** @return true once we've spent too long hunting for the last ball(s). */
+    private boolean pickupStalled() {
+        return pickupStallTimerStarted
+                && pickupStallTimer.getElapsedTimeSeconds() >= PICKUP_TIMEOUT_SEC;
+    }
+
     private void commandSlot(int slot) {
         if (slot != lastCommandedSlot) {
             lastCommandedSlot = slot;
@@ -134,195 +410,9 @@ public class BlueNineBallAuto extends OpMode {
         Spindexer.INSTANCE.setToPosition(Spindexer.Position.values()[slot]);
     }
 
-    public void autonomousPathUpdate() {
-        switch (pathState) {
-
-            case 0: // Drive to shoot preload
-                follower.followPath(paths.ShootPreload, true);
-
-                // Switch to SHOOT mode and rev flywheel
-                Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
-                int preloadSlot = Spindexer.INSTANCE.filledPosition();
-                if (preloadSlot != -1) commandSlot(preloadSlot);
-                Turret.INSTANCE.setVelocity(1075);
-
-                setPathState(1);
-                break;
-
-            case 1: // Wait for path to finish, then shoot preload
-                if (!follower.isBusy()) {
-                    fireBallsLogic(2);
-                }
-                break;
-
-            case 2: // Setup PickupThree
-                Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
-                int free = Spindexer.INSTANCE.freePosition();
-                if (free != -1) commandSlot(free);
-
-                Intake.INSTANCE.on();
-                follower.followPath(paths.PickupThree, true);
-                setPathState(3);
-                break;
-
-            case 3: // Execute PickupThree
-                runIntakeDwell();
-                // Wait until path is done AND 3 balls are picked up
-                if (!follower.isBusy() && Spindexer.INSTANCE.getFull()) {
-                    Intake.INSTANCE.idle();
-
-                    // Switch to SHOOT mode and rev flywheel
-                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
-                    int filled3 = Spindexer.INSTANCE.filledPosition();
-                    if (filled3 != -1) commandSlot(filled3);
-                    Turret.INSTANCE.setVelocity(1075);
-
-                    follower.followPath(paths.Shoot3, true);
-                    setPathState(4);
-                }
-                break;
-
-            case 4: // Wait for path to finish, then shoot 3
-                if (!follower.isBusy()) {
-                    fireBallsLogic(5);
-                }
-                break;
-
-            case 5: // Setup DriveToNine
-                Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.INTAKE);
-                free = Spindexer.INSTANCE.freePosition();
-                if (free != -1) commandSlot(free);
-
-                Intake.INSTANCE.on();
-                follower.followPath(paths.DriveToNine, true);
-                setPathState(6);
-                break;
-
-            case 6: // Drive toward last set of balls
-                runIntakeDwell();
-                if (!follower.isBusy()) {
-                    follower.followPath(paths.PickupNine, true);
-                    setPathState(7);
-                }
-                break;
-
-            case 7: // Execute PickupNine
-                runIntakeDwell();
-                if (!follower.isBusy() && Spindexer.INSTANCE.getFull()) {
-                    Intake.INSTANCE.idle();
-
-                    // Switch to SHOOT mode and rev flywheel
-                    Spindexer.INSTANCE.setPositionType(Spindexer.PositionType.SHOOT);
-                    int filled9 = Spindexer.INSTANCE.filledPosition();
-                    if (filled9 != -1) commandSlot(filled9);
-                    Turret.INSTANCE.setVelocity(1075);
-
-                    follower.followPath(paths.ShootNineAndEnd, true);
-                    setPathState(8);
-                }
-                break;
-
-            case 8: // Wait for path to finish, then shoot last 3
-                if (!follower.isBusy()) {
-                    fireBallsLogic(9);
-                }
-                break;
-
-            case 9: // Done
-                Turret.INSTANCE.setVelocity(0);
-                panelsTelemetry.debug("Status", "All 9 balls scored - Auto Complete");
-                break;
-        }
-    }
-
-    /**
-     * Logic to shoot exactly 3 balls. Handles revving, flicking up/down aggressively,
-     * waiting for the transfer to clear, and indexing the spindexer.
-     * CHANGED: no longer assumes sequential POSITION_ONE -> TWO -> THREE. Always
-     * asks the spindexer which slot is actually filled, and won't fire until the
-     * spindexer has settled at that slot (mirrors Teleop's spindexerSettled gate).
-     */
-    private void fireBallsLogic(int nextPathState) {
-        if (ballsShot >= 3 || Spindexer.INSTANCE.getEmpty()) {
-            Turret.INSTANCE.setVelocity(0);
-            ballsShot = 0;
-            flickState = FlickState.WAIT_RPM;
-            setPathState(nextPathState);
-            return;
-        }
-
-        switch (flickState) {
-            case WAIT_RPM:
-                if (Turret.INSTANCE.getVelocity() >= 1050) {
-                    // Ask the spindexer what's actually loaded, don't assume a slot.
-                    int filled = Spindexer.INSTANCE.filledPosition();
-                    if (filled != -1) commandSlot(filled);
-
-                    // Don't fire until the spindexer has actually finished arriving.
-                    if (!spindexerSettled) break;
-
-                    Transfer.INSTANCE.transferUpAggressive();
-                    flickTimer.resetTimer();
-                    flickState = FlickState.FLICK_UP;
-                }
-                break;
-
-            case FLICK_UP:
-                // Re-assert every loop to hold max power against friction
-                Transfer.INSTANCE.transferUpAggressive();
-                if (flickTimer.getElapsedTimeSeconds() > 1.0) { // was 0.5
-                    Transfer.INSTANCE.transferDownAggressive();
-                    flickTimer.resetTimer();
-                    flickState = FlickState.FLICK_DOWN;
-                }
-                break;
-
-            case FLICK_DOWN:
-                // Wait about 1.4 seconds so it's fully down
-                if (flickTimer.getElapsedTimeSeconds() > 1.4) {
-                    // Mark slot as empty now that ball is fired
-                    Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), Spindexer.DetectedColor.EMPTY);
-                    Spindexer.INSTANCE.periodic();
-
-                    ballsShot++;
-                    // No more manual Position.next() -- next WAIT_RPM pass will
-                    // call filledPosition() again and find whichever slot is
-                    // actually still loaded.
-                    flickState = FlickState.WAIT_RPM;
-                }
-                break;
-        }
-    }
-
-    /**
-     * Automatically stamps balls when they enter the intake and moves the spindexer
-     * to the next open slot until it is full.
-     */
-    private void runIntakeDwell() {
-        Intake.INSTANCE.on();
-        if (Spindexer.INSTANCE.getPositionType() != Spindexer.PositionType.INTAKE) return;
-
-        if (!dwelling) {
-            dwelling = true;
-            dwellTimer.resetTimer();
-            return;
-        }
-
-        if (dwellTimer.getElapsedTimeSeconds() >= 0.3) {
-            Spindexer.DetectedColor seen = Spindexer.INSTANCE.readCurrentColor();
-            Spindexer.INSTANCE.setColor(Spindexer.INSTANCE.getPosition(), seen);
-            dwelling = false;
-            Spindexer.INSTANCE.periodic();
-
-            // Only advance if a ball was actually detected
-            if (seen != Spindexer.DetectedColor.EMPTY) {
-                int free = Spindexer.INSTANCE.freePosition();
-                if (free != -1) commandSlot(free);
-            }
-            // If EMPTY, stay on current slot and dwell again next loop
-        }
-    }
-
+    // ─────────────────────────────────────────────────────────────────────────
+    // Paths -- unchanged from the original file.
+    // ─────────────────────────────────────────────────────────────────────────
     public static class Paths {
         public PathChain ShootPreload;
         public PathChain PickupThree;
@@ -337,15 +427,15 @@ public class BlueNineBallAuto extends OpMode {
                     .setLinearHeadingInterpolation(Math.toRadians(138), Math.toRadians(138))
                     .build();
 
-            // Pickup paths: setZeroPowerAccelerationMultiplier brakes harder so bot
-            // slows down and actually rolls over balls instead of flying past them.
-            // Higher number = harder braking. Start at 4, tune up if still too fast.
             PickupThree = follower.pathBuilder()
                     .addPath(new BezierLine(new Pose(60.162, 83.168), new Pose(18.442, 83.465)))
                     .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(180))
                     .build();
-            PickupThree.getPath(0).setConstraints(new PathConstraints(0.5, 100, 2, 1));
-
+            // NOTE: actual speed control for this leg is done via
+            // follower.setMaxPower(PICKUP_MAX_POWER) in the state machine
+            // below, not here -- PathConstraints tunes path-following
+            // tolerances, not drivetrain speed.
+            PickupThree.getPath(0).setConstraints(new PathConstraints(1.5, 100, 2, 1));
             Shoot3 = follower.pathBuilder()
                     .addPath(new BezierLine(new Pose(18.442, 83.465), new Pose(52.233, 109.233)))
                     .setLinearHeadingInterpolation(Math.toRadians(138), Math.toRadians(138))
@@ -360,8 +450,7 @@ public class BlueNineBallAuto extends OpMode {
                     .addPath(new BezierLine(new Pose(44.581, 59.651), new Pose(18.930, 59.721)))
                     .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(180))
                     .build();
-            PickupNine.getPath(0).setConstraints(new PathConstraints(0.5, 100, 2, 1));
-
+            PickupNine.getPath(0).setConstraints(new PathConstraints(1.5, 100, 2, 1));
             ShootNineAndEnd = follower.pathBuilder()
                     .addPath(new BezierLine(new Pose(18.930, 59.721), new Pose(49.884, 113.581)))
                     .setLinearHeadingInterpolation(Math.toRadians(180), Math.toRadians(138))

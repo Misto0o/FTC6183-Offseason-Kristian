@@ -55,8 +55,8 @@ public class Transfer {
     }
 
     public void transferUpAggressive(){
-        leftFork.setPosition(Math.min(1.20, leftUp + 0.20));
-        rightFork.setPosition(Math.max(-0.20, rightUp - 0.20));
+        leftFork.setPosition(Math.min(1.10, leftUp + 1.10));
+        rightFork.setPosition(Math.max(-1.10, rightUp - 1.10));
     }
 
     /**
